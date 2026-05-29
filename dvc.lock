@@ -1,0 +1,19 @@
+schema: '2.0'
+stages:
+  split_dataset:
+    cmd: python src/split_data.py
+    deps:
+    - path: data/labels.csv
+      hash: md5
+      md5: 6b4d55891f369de940d96a843bebeb33
+      size: 485161
+    - path: src/split_data.py
+      hash: md5
+      md5: 5aba289b19110f9f908c6a84259c725e
+      size: 648
+    outs:
+    - path: data/processed/
+      hash: md5
+      md5: 37a64afd61557226e3b824eba0f4de0b.dir
+      size: 480480
+      nfiles: 3

@@ -1,0 +1,8 @@
+stages:
+  split_dataset:
+    cmd: python src/split_data.py
+    deps:
+    - data/labels.csv
+    - src/split_data.py
+    outs:
+    - data/processed/
