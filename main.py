@@ -14,7 +14,7 @@ os.environ["AWS_SECRET_ACCESS_KEY"] = "password123"
 os.environ["MLFLOW_S3_ENDPOINT_URL"] = "http://minio:9000"
 mlflow.set_tracking_uri("http://mlflow:5000")
 
-app = FastAPI(title="OMR Grading Engine API v1")
+app = FastAPI(title="OMR Grading Engine API v2")
 
 # ==========================================
 # 2. TẢI MÔ HÌNH TỰ ĐỘNG TỪ MLFLOW
