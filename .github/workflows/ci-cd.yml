@@ -1,0 +1,56 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: CI - Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - name: Install flake8
+        run: pip install flake8
+      - name: Lint (only fatal errors)
+        run: flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+
+  deploy:
+    name: CD - Deploy to server
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: self-hosted
+    steps:
+      - name: Pull latest code
+        run: |
+          cd ~/mlops_project
+          git fetch origin
+          git reset --hard origin/main
+
+      - name: Rebuild & restart API + monitor
+        run: |
+          cd ~/mlops_project
+          if docker compose version >/dev/null 2>&1; then
+            docker compose up -d --build omr_api monitor
+          else
+            docker-compose up -d --build omr_api monitor
+          fi
+
+      - name: Health check
+        run: |
+          for i in $(seq 1 12); do
+            if curl -fsS http://localhost:8001/docs >/dev/null; then
+              echo "API is up on :8001"
+              exit 0
+            fi
+            echo "waiting... ($i)"
+            sleep 5
+          done
+          echo "API did not respond"
+          docker logs omr_engine --tail 50 || true
+          exit 1
