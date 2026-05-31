@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+python-multipart
+mlflow
+boto3
+opencv-python-headless
+numpy
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch

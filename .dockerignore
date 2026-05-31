@@ -1,0 +1,17 @@
+# Bỏ qua dữ liệu thô và tập huấn luyện
+data/
+
+# Bỏ qua các tệp theo dõi version
+.dvc/
+.git/
+.gitignore
+.dvcignore
+dvc.lock
+dvc.yaml
+
+# Bỏ qua mã nguồn train không cần thiết cho API
+__pycache__/
+*.ipynb
+train.py
+generate_data.py
+docker-compose.yml
