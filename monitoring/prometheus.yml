@@ -5,3 +5,6 @@ scrape_configs:
   - job_name: 'omr_monitoring'
     static_configs:
       - targets: ['monitor:8890']
+  - job_name: 'server_hardware'
+    static_configs:
+      - targets: ['node-exporter:9100']
