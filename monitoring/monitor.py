@@ -4,8 +4,18 @@ import numpy as np
 import cv2
 import tempfile
 import os
-import shutil
 from prometheus_client import start_http_server, Counter, Histogram, Gauge
+
+# === CẤU HÌNH ===
+DRIFT_THRESHOLD = 0.15
+RETRAIN_THRESHOLD = 50
+DISCORD_WEBHOOK = "https://discordapp.com/api/webhooks/1510835063229513749/Q9IL2feBSAqrteKmzKIOQCmp8e3BYH7ABjQW27so7uQDrNFKaGk4pKA0rqudMSGKMvyo"
+API_URL = "http://omr_engine:8000/predict"
+
+RETRAIN_DIR = "/app/retrain_queue"
+BAD_DATA_DIR = "/app/bad_data"
+os.makedirs(RETRAIN_DIR, exist_ok=True)
+os.makedirs(BAD_DATA_DIR, exist_ok=True)
 
 # === METRICS ===
 TOTAL_REQUESTS = Counter('omr_total_requests', 'Tong so request')
@@ -19,17 +29,37 @@ ANSWER_D = Counter('omr_answer_D', 'So lan dap an D')
 DRIFT_SCORE = Gauge('omr_drift_score', 'Data drift score')
 API_HEALTH = Gauge('omr_api_health', 'API health')
 RETRAIN_QUEUE = Gauge('omr_retrain_queue_size', 'So anh cho retrain')
+BAD_DATA_COUNT = Gauge('omr_bad_data_count', 'So anh bi loai')
 
-API_URL = "http://omr_engine:8000/predict"
 ANSWER_COUNTERS = {'A': ANSWER_A, 'B': ANSWER_B, 'C': ANSWER_C, 'D': ANSWER_D}
 REFERENCE_DIST = {'A': 0.25, 'B': 0.25, 'C': 0.25, 'D': 0.25}
 answer_counts = {'A': 0, 'B': 0, 'C': 0, 'D': 0}
 total_predictions = 0
 
-DRIFT_THRESHOLD = 0.15
-RETRAIN_THRESHOLD = 50
-RETRAIN_DIR = "/app/retrain_queue"
-os.makedirs(RETRAIN_DIR, exist_ok=True)
+def send_discord(message, color=16711680):
+    try:
+        requests.post(DISCORD_WEBHOOK, json={
+            "embeds": [{"title": "OMR Monitoring Alert", "description": message, "color": color}]
+        }, timeout=5)
+    except Exception as e:
+        print(f"[DISCORD ERROR] {e}", flush=True)
+
+def is_bad_image(img):
+    """Kiem tra anh co bi loi khong"""
+    if img is None:
+        return True, "Anh null"
+    mean = np.mean(img)
+    std = np.std(img)
+    # Qua toi
+    if mean < 30:
+        return True, f"Anh qua toi (mean={mean:.1f})"
+    # Qua sang
+    if mean > 230:
+        return True, f"Anh qua sang (mean={mean:.1f})"
+    # Qua mo (it texture)
+    if std < 10:
+        return True, f"Anh qua mo (std={std:.1f})"
+    return False, "OK"
 
 def calculate_drift():
     if total_predictions == 0:
@@ -44,22 +74,26 @@ def check_api_health():
     except:
         return 0
 
-def get_retrain_queue_size():
-    return len([f for f in os.listdir(RETRAIN_DIR) if f.endswith('.jpg')])
-
-def save_to_retrain_queue(img, filename):
-    path = os.path.join(RETRAIN_DIR, filename)
-    cv2.imwrite(path, img)
-    size = get_retrain_queue_size()
-    RETRAIN_QUEUE.set(size)
-    print(f"[QUEUE] Luu anh vao retrain queue: {filename} | Tong: {size}", flush=True)
-    if size >= RETRAIN_THRESHOLD:
-        print(f"[RETRAIN] Du {RETRAIN_THRESHOLD} anh! Can retrain model!", flush=True)
-        print(f"[RETRAIN] Chay: cd /app && dvc add data/retrain_queue && dvc push", flush=True)
+def get_queue_size(folder):
+    return len([f for f in os.listdir(folder) if f.endswith('.jpg')])
 
 def simulate_and_monitor():
     global total_predictions
-    img = np.random.randint(200, 255, (1200, 800), dtype=np.uint8)
+
+    # Tao anh gia lap
+    img = np.random.randint(0, 255, (1200, 800), dtype=np.uint8)
+
+    # Kiem tra anh co bi loi khong
+    bad, reason = is_bad_image(img)
+    if bad:
+        filename = f"bad_{int(time.time())}.jpg"
+        cv2.imwrite(os.path.join(BAD_DATA_DIR, filename), img)
+        bad_count = get_queue_size(BAD_DATA_DIR)
+        BAD_DATA_COUNT.set(bad_count)
+        print(f"[BAD DATA] Loai anh: {reason} | Tong bad: {bad_count}", flush=True)
+        send_discord(f"⚠️ **Phát hiện ảnh xấu!**\nLý do: {reason}\nTổng ảnh xấu: {bad_count}", color=16744272)
+        return
+
     tmp = tempfile.NamedTemporaryFile(suffix='.jpg', delete=False)
     cv2.imwrite(tmp.name, img)
     start = time.time()
@@ -69,6 +103,7 @@ def simulate_and_monitor():
         elapsed = time.time() - start
         RESPONSE_TIME.observe(elapsed)
         TOTAL_REQUESTS.inc()
+
         if response.status_code == 200:
             SUCCESS_REQUESTS.inc()
             data = response.json()
@@ -78,14 +113,26 @@ def simulate_and_monitor():
                     ANSWER_COUNTERS[ans].inc()
                     answer_counts[ans] += 1
                     total_predictions += 1
+
             drift = calculate_drift()
             DRIFT_SCORE.set(drift)
             print(f"[OK] {len(answers)} dap an | drift={drift:.3f} | time={elapsed:.2f}s", flush=True)
 
-            # Neu drift cao thi luu anh vao retrain queue
             if drift > DRIFT_THRESHOLD:
                 filename = f"drift_{int(time.time())}.jpg"
-                save_to_retrain_queue(img, filename)
+                cv2.imwrite(os.path.join(RETRAIN_DIR, filename), img)
+                queue_size = get_queue_size(RETRAIN_DIR)
+                RETRAIN_QUEUE.set(queue_size)
+                print(f"[QUEUE] Luu anh retrain: {filename} | Tong: {queue_size}", flush=True)
+                send_discord(
+                    f"🔴 **Drift cao! Đã lưu ảnh vào retrain queue**\nDrift score: {drift:.3f} (ngưỡng: {DRIFT_THRESHOLD})\nSố ảnh trong queue: {queue_size}/{RETRAIN_THRESHOLD}",
+                    color=16711680
+                )
+                if queue_size >= RETRAIN_THRESHOLD:
+                    send_discord(
+                        f"🚨 **ĐỦ {RETRAIN_THRESHOLD} ẢNH! CẦN RETRAIN MODEL NGAY!**\nChạy: dvc add data/retrain_queue && dvc push",
+                        color=16711680
+                    )
         else:
             FAILED_REQUESTS.inc()
             print(f"[FAIL] Status: {response.status_code}", flush=True)
@@ -99,12 +146,14 @@ def simulate_and_monitor():
 if __name__ == '__main__':
     port = 8890
     print(f"=== Khoi dong Monitoring Service tai port {port} ===", flush=True)
-    print(f"=== Drift threshold: {DRIFT_THRESHOLD} | Retrain threshold: {RETRAIN_THRESHOLD} anh ===", flush=True)
+    print(f"=== Drift threshold: {DRIFT_THRESHOLD} | Retrain threshold: {RETRAIN_THRESHOLD} ===", flush=True)
     start_http_server(port)
+    send_discord("✅ **Monitoring Service khởi động thành công!**\nĐang theo dõi model OMR...", color=65280)
     while True:
         health = check_api_health()
         API_HEALTH.set(health)
-        RETRAIN_QUEUE.set(get_retrain_queue_size())
+        RETRAIN_QUEUE.set(get_queue_size(RETRAIN_DIR))
+        BAD_DATA_COUNT.set(get_queue_size(BAD_DATA_DIR))
         print(f"[HEALTH] API={'OK' if health else 'DOWN'}", flush=True)
         if health:
             simulate_and_monitor()

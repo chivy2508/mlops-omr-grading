@@ -8,8 +8,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Chỉ copy đúng file API vào trong bộ chứa (tiết kiệm tối đa dung lượng)
-COPY main.py .
+COPY . .
 
 # Mở cổng giao tiếp
 EXPOSE 8000

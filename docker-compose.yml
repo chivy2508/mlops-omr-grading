@@ -76,6 +76,17 @@ services:
     depends_on:
       - prometheus
 
+  omr_api_demo:
+    build: .
+    container_name: omr_api_demo
+    ports:
+      - "8501:8501"
+    command: streamlit run app_api.py --server.port 8501 --server.address 0.0.0.0
+    volumes:
+      - .:/app
+    depends_on:
+      - omr_api
+
 volumes:
   pg_data:
   minio_data:
