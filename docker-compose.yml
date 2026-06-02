@@ -54,6 +54,8 @@ services:
     container_name: omr_monitor
     depends_on:
       - omr_api
+    volumes:
+      - ./monitoring/demo_images:/app/demo_images
 
   prometheus:
     image: prom/prometheus

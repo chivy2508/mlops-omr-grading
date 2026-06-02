@@ -3,8 +3,9 @@ global:
 
 scrape_configs:
   - job_name: 'omr_monitoring'
+    metrics_path: '/metrics'
     static_configs:
-      - targets: ['monitor:8890']
+      - targets: ['omr_api:8000']
   - job_name: 'server_hardware'
     static_configs:
       - targets: ['node-exporter:9100']

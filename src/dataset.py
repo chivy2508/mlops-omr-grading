@@ -22,7 +22,7 @@ class OMRDataset(Dataset):
         # 1. Đọc tên ảnh
         img_name = os.path.join(self.img_dir, self.data_frame.iloc[idx, 0])
         image = cv2.imread(img_name, cv2.IMREAD_GRAYSCALE)
-        image = cv2.resize(image, (800, 1200))
+        image = cv2.resize(image, (400, 600))
         image = image.astype(np.float32) / 255.0
         image = torch.tensor(image).unsqueeze(0) 
 

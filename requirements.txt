@@ -4,6 +4,7 @@ python-multipart
 mlflow
 boto3
 opencv-python-headless
+prometheus-client==0.17.1
 numpy
 streamlit
 requests
