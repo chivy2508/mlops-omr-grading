@@ -40,7 +40,7 @@ total_predictions = 0
 
 def send_discord(message, color=16711680):
     try:
-        requests.post(DISCORD_WEBHOOK, json={
+        requests.post(DISCORD_WEBHOOK_URL, json={
             "embeds": [{"title": "OMR Monitoring Alert", "description": message, "color": color}]
         }, timeout=5)
     except Exception as e:
