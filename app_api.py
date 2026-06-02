@@ -135,23 +135,29 @@ with col2:
                     # BƯỚC 1: VẼ CHẤM ĐỎ LÊN ẢNH BẰNG OPENCV
                     # ==========================================
                     # Chuyển data dạng byte của file upload thành mảng ảnh OpenCV
-                    file_bytes = np.asarray(bytearray(uploaded_file.getvalue()), dtype=np.uint8)
-                    img_cv2 = cv2.imdecode(file_bytes, 1)
+                    aligned_b64 = data.get("aligned_image")
+                    
+                    if aligned_b64:
+                        # Giải mã ảnh xịn 800x1200 từ API
+                        img_data = base64.b64decode(aligned_b64)
+                        np_arr = np.frombuffer(img_data, np.uint8)
+                        # Dùng IMREAD_COLOR để biến ảnh xám thành ảnh màu, vẽ chấm đỏ mới lên màu được
+                        img_cv2 = cv2.imdecode(np_arr, cv2.IMREAD_COLOR) 
+                    else:
+                        # Dự phòng nếu API bị lỗi không trả ảnh
+                        file_bytes = np.asarray(bytearray(uploaded_file.getvalue()), dtype=np.uint8)
+                        img_cv2 = cv2.imdecode(file_bytes, 1)
 
-                    # Giả định API của bạn trả về data có dạng: 
-                    # {"predictions": [{"cau": 1, "dap_an": "A", "x": 150, "y": 300}, ...]}
                     predictions = data.get("predictions", [])
                     
                     for item in predictions:
-                        # Rút tọa độ từ API ra (Nếu API chưa có, bạn phải code thêm bên FastAPI nhé)
                         x = item.get("x")
                         y = item.get("y")
                         if x is not None and y is not None:
-                            # Vẽ chấm đỏ không viền (thickness=-1)
                             cv2.circle(img_cv2, (int(x), int(y)), radius=15, color=(0, 0, 255), thickness=-1)
 
-                    # Hiển thị ảnh đã vẽ chấm đỏ lên Streamlit
-                    st.image(img_cv2, channels="BGR", caption="Mô hình nhận diện (Chấm đỏ)", use_container_width=True)
+                    # Hiển thị lên màn hình
+                    st.image(img_cv2, channels="BGR", caption="Ảnh nắn thẳng & Nhận diện (Chấm đỏ)", use_container_width=True)
                     
                     # ==========================================
                     # BƯỚC 2: BẢNG DATA ĐỂ KHÁCH HÀNG SỬA LỖI

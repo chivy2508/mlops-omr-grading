@@ -8,6 +8,7 @@ import requests
 import json
 import uuid
 from prometheus_client import make_asgi_app, Counter, Gauge
+import base64
 
 # ==========================================
 # 1. CẤU HÌNH MLFLOW & MINIO 
@@ -83,19 +84,36 @@ def check_blur_and_brightness(image_gray: np.ndarray):
 
 
 def get_aligned_paper(image: np.ndarray, target_w: int = 800, target_h: int = 1200):
+    # Lấy diện tích ảnh gốc để làm chuẩn so sánh
+    orig_h, orig_w = image.shape[:2]
+    total_area = orig_h * orig_w
+    
     blur = cv2.GaussianBlur(image, (5, 5), 0)
     edged = cv2.Canny(blur, 75, 200)
-    cnts, _ = cv2.findContours(edged.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if not cnts: return None 
-    cnts = sorted(cnts, key=cv2.contourArea, reverse=True)[:10]
+    
+    # Dùng RETR_LIST thay vì EXTERNAL để quét được cả viền giấy bên ngoài lẫn khung in bên trong
+    cnts, _ = cv2.findContours(edged.copy(), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    
     paper_contour = None
-    for c in cnts:
-        peri = cv2.arcLength(c, True)
-        approx = cv2.approxPolyDP(c, 0.02 * peri, True)
-        if len(approx) == 4:
-            paper_contour = approx
-            break
-    if paper_contour is None: return None 
+    if cnts:
+        cnts = sorted(cnts, key=cv2.contourArea, reverse=True)[:10]
+        for c in cnts:
+            peri = cv2.arcLength(c, True)
+            approx = cv2.approxPolyDP(c, 0.02 * peri, True)
+            
+            if len(approx) == 4:
+                area = cv2.contourArea(approx)
+                # ĐIỀU KIỆN SỐNG CÒN: Khung tìm được phải chiếm ít nhất 30% diện tích ảnh gốc.
+                # Nếu bé hơn, nó chỉ là một cái khung phụ (như khung điền tên) -> Bỏ qua ngay!
+                if area > 0.3 * total_area:
+                    paper_contour = approx
+                    break
+                    
+    if paper_contour is None:
+        # FALLBACK (Dự phòng): Nếu không tìm thấy khung giấy nào đủ to (do chụp trên nền trắng, thiếu tương phản), 
+        # thì không cắt xén gì cả. Ép thẳng tấm ảnh gốc của bạn về 800x1200.
+        return cv2.resize(image, (target_w, target_h))
+        
     rect = np.zeros((4, 2), dtype="float32")
     pts = paper_contour.reshape(4, 2)
     s = pts.sum(axis=1)
@@ -289,7 +307,15 @@ async def predict_omr(file: UploadFile = File(...)):
                 
         current_drift = update_drift_score()
         
+        _, buffer = cv2.imencode('.jpg', aligned_img)
+        aligned_base64 = base64.b64encode(buffer).decode('utf-8')
+
         # Sửa chữ answers thành final_answers
-        return {"trang_thai": "thành công", "ket_qua_cham_diem": final_answers}
+        return {
+            "trang_thai": "thành công", 
+            "predictions": predictions_detail,
+            "drift_score": current_drift,
+            "aligned_image": aligned_base64
+        }
     except Exception as e:
         return {"trang_thai": "lỗi", "chi_tiet": str(e)}
