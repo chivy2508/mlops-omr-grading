@@ -1,10 +1,12 @@
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, UploadFile, Form
 import mlflow
 import os
 import cv2
 import numpy as np
 import torch
 import requests
+import json
+import uuid
 from prometheus_client import make_asgi_app, Counter, Gauge
 
 # ==========================================
@@ -16,7 +18,6 @@ mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
 
 app = FastAPI(title="OMR Grading Engine API")
-
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
 
 metrics_app = make_asgi_app()
@@ -41,10 +42,11 @@ def update_drift_score():
     """Hàm tự động tính toán lại độ lệch khi có đáp án mới"""
     
     if total_predictions == 0:
-        return
+        return 0.0
     current_dist = {k: v / total_predictions for k, v in answer_counts.items()}
     drift = sum(abs(current_dist[k] - REFERENCE_DIST[k]) for k in REFERENCE_DIST) / 2
     DRIFT_SCORE.set(drift)
+    return drift
 
 def send_discord_alert(message: str):
     """Gửi cảnh báo rác về Discord"""
@@ -112,12 +114,83 @@ def get_aligned_paper(image: np.ndarray, target_w: int = 800, target_h: int = 12
 def clean_and_binarize(aligned_image: np.ndarray) -> np.ndarray:
     blur = cv2.GaussianBlur(aligned_image, (3, 3), 0)
     cleaned = cv2.adaptiveThreshold(
-
         blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-
         cv2.THRESH_BINARY, 11, 2
     )
     return cleaned
+
+def get_dynamic_start(binary_image: np.ndarray, default_x=141.0, default_y=343.0):
+    """
+    Tìm ô vuông đen (Anchor) ở gần Câu 1 để xác định lại START_X và START_Y
+    """
+    # cv2.findContours tìm vật thể trắng trên nền đen.
+    # Ảnh binary hiện tại của bạn thường là nền trắng, ô đen -> Cần đảo ngược màu (Invert)
+    inv = cv2.bitwise_not(binary_image)
+    
+    # Khoanh vùng tìm kiếm: Chỉ tìm ở 1/4 góc trên - bên trái tờ giấy để code chạy nhanh và không bắt nhầm rác
+    h, w = inv.shape
+    roi = inv[0:int(h/2), 0:int(w/2)]
+    
+    cnts, _ = cv2.findContours(roi, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    for c in cnts:
+        x, y, w_box, h_box = cv2.boundingRect(c)
+        aspect_ratio = w_box / float(h_box)
+        area = cv2.contourArea(c)
+        
+        # Điều kiện nhận dạng "Ô vuông đen":
+        # 1. Tỷ lệ dài/rộng xấp xỉ 1.0 (Hình vuông)
+        # 2. Diện tích đủ lớn (không phải hạt bụi) nhưng không quá to (không phải cả cái bảng)
+        if 0.8 <= aspect_ratio <= 1.2 and 150 < area < 900:
+            
+            # KHOẢNG CÁCH TỪ Ô VUÔNG ĐẾN TÂM ĐÁP ÁN A (BẠN CẦN ĐO LẠI 1 LẦN DUY NHẤT)
+            # Ví dụ: Từ mép trái ô vuông dịch sang phải 40px là tâm đáp án A
+            OFFSET_X = 40.0 
+            # Ví dụ: Tâm đáp án A nằm ngang hàng với mép trên ô vuông
+            OFFSET_Y = 0.0  
+            
+            dynamic_start_x = float(x + OFFSET_X)
+            dynamic_start_y = float(y + OFFSET_Y)
+            
+            return dynamic_start_x, dynamic_start_y
+            
+    # Nếu xui xẻo giấy bị rách/mất ô vuông đen, trả về tọa độ cứng dự phòng để API không sập
+    return default_x, default_y
+
+RETRAIN_DIR = "./retrain_dataset"
+os.makedirs(RETRAIN_DIR, exist_ok=True)
+
+@app.post("/feedback")
+async def save_human_feedback(
+    file: UploadFile = File(...), 
+    correct_labels: str = Form(...) 
+):
+    try:
+        unique_id = str(uuid.uuid4())[:8]
+        
+        image_extension = file.filename.split(".")[-1]
+        image_filename = f"{unique_id}_image.{image_extension}"
+        image_path = os.path.join(RETRAIN_DIR, image_filename)
+        
+        with open(image_path, "wb") as buffer:
+            buffer.write(await file.read())
+            
+        # 2. Lưu đáp án chuẩn (Ground Truth) ra file JSON
+        label_filename = f"{unique_id}_label.json"
+        label_path = os.path.join(RETRAIN_DIR, label_filename)
+        
+        # Chuyển chuỗi JSON từ Streamlit gửi lên thành dạng dictionary
+        labels_data = json.loads(correct_labels) 
+        
+        with open(label_path, "w", encoding="utf-8") as f:
+            json.dump(labels_data, f, ensure_ascii=False, indent=4)
+        
+        send_discord_alert(f"👤 Có người dùng vừa sửa nhãn cho ảnh `{image_filename}`. Đã đưa vào kho chờ.")
+            
+        return {"status": "success", "message": f"Đã lưu data vào {RETRAIN_DIR}"}
+        
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 # ==========================================
 # 3. GIAO THỨC API
@@ -168,6 +241,42 @@ async def predict_omr(file: UploadFile = File(...)):
         label_map_reverse = {0: 'A', 1: 'B', 2: 'C', 3: 'D'}
         final_answers = [label_map_reverse[ans.item()] for ans in predictions]
 
+        START_X, START_Y = get_dynamic_start(final_processed_image, default_x=141.0, default_y=343.0)
+
+        X_STRIDE = 30.5  # Khoảng cách giữa A, B, C, D
+        Y_STRIDE = 23.7  # Khoảng cách giữa Câu 1, Câu 2... dọc xuống
+        COL_STRIDE = 179 # Khoảng cách sang cột mới
+        BLOCK_GAP = 0    # Khoảng trống giữa các block (nếu có)
+        
+        predictions_detail = []
+        for i, ans in enumerate(final_answers):
+            cau_hoi = i + 1
+            q = i  # q chạy từ 0 đến 39 (chuẩn array index)
+            
+            # Ánh xạ chữ sang số: A=0, B=1, C=2, D=3
+            offset_x_map = {'A': 0, 'B': 1, 'C': 2, 'D': 3}
+            ans_idx = offset_x_map.get(ans, 0)
+            
+            # Logic chia cột và dòng y hệt code cũ của bạn
+            col_index = q // 10  
+            row_index = q % 10   
+            
+            # Tính tọa độ bằng float
+            center_x = START_X + (ans_idx * X_STRIDE) + (col_index * COL_STRIDE)
+            center_y = START_Y + (row_index * Y_STRIDE)
+            
+            # Bù trừ đường kẻ ngang
+            if row_index >= 5:
+                center_y += BLOCK_GAP
+                
+            # Đóng gói JSON trả về Streamlit
+            predictions_detail.append({
+                "cau": cau_hoi,
+                "dap_an": ans,
+                "x": center_x,
+                "y": center_y
+            })
+
         SUCCESS_REQUESTS.inc()
         global total_predictions
         
@@ -178,7 +287,7 @@ async def predict_omr(file: UploadFile = File(...)):
                 answer_counts[ans] += 1
                 total_predictions += 1
                 
-        update_drift_score() # Tính lại điểm Drift
+        current_drift = update_drift_score()
         
         # Sửa chữ answers thành final_answers
         return {"trang_thai": "thành công", "ket_qua_cham_diem": final_answers}

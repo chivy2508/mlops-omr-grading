@@ -1,8 +1,11 @@
 import streamlit as st
 import requests
 import base64
-
+import cv2
+import pandas as pd
+import numpy as np
 st.set_page_config(page_title="Demo OMR API", page_icon="⚡", layout="wide")
+
 
 def get_base64_image(image_path):
     try:
@@ -114,7 +117,7 @@ with col1:
 
 # ================= CỘT PHẢI: KẾT QUẢ =================
 with col2:
-    st.subheader("📥 2. Kết quả chấm")
+    st.subheader("📥 2. Kết quả chấm & Phản hồi")
     
     if uploaded_file is not None and submit_button:
         with st.spinner("Đang đợi Backend kéo Model và xử lý ảnh..."):
@@ -127,11 +130,82 @@ with col2:
                 if response.status_code == 200:
                     data = response.json()
                     st.success("🎉 API trả kết quả thành công!")
-                    st.json(data)
+                    
+                    # ==========================================
+                    # BƯỚC 1: VẼ CHẤM ĐỎ LÊN ẢNH BẰNG OPENCV
+                    # ==========================================
+                    # Chuyển data dạng byte của file upload thành mảng ảnh OpenCV
+                    file_bytes = np.asarray(bytearray(uploaded_file.getvalue()), dtype=np.uint8)
+                    img_cv2 = cv2.imdecode(file_bytes, 1)
+
+                    # Giả định API của bạn trả về data có dạng: 
+                    # {"predictions": [{"cau": 1, "dap_an": "A", "x": 150, "y": 300}, ...]}
+                    predictions = data.get("predictions", [])
+                    
+                    for item in predictions:
+                        # Rút tọa độ từ API ra (Nếu API chưa có, bạn phải code thêm bên FastAPI nhé)
+                        x = item.get("x")
+                        y = item.get("y")
+                        if x is not None and y is not None:
+                            # Vẽ chấm đỏ không viền (thickness=-1)
+                            cv2.circle(img_cv2, (int(x), int(y)), radius=15, color=(0, 0, 255), thickness=-1)
+
+                    # Hiển thị ảnh đã vẽ chấm đỏ lên Streamlit
+                    st.image(img_cv2, channels="BGR", caption="Mô hình nhận diện (Chấm đỏ)", use_container_width=True)
+                    
+                    # ==========================================
+                    # BƯỚC 2: BẢNG DATA ĐỂ KHÁCH HÀNG SỬA LỖI
+                    # ==========================================
+                    st.markdown("### ✍️ Kiểm tra và Dạy lại mô hình")
+                    
+                    # Lấy điểm Drift từ API (Giả định API có trả về thông số này)
+                    drift_score = data.get("drift_score", 0.0)
+                    
+                    if drift_score > 0.15:
+                        st.warning(f"⚠️ Cảnh báo: Độ lệch dữ liệu hơi cao (Drift: {drift_score}). Vui lòng dò kỹ các chấm đỏ và sửa lại bảng dưới đây nếu máy đoán sai!")
+                    else:
+                        st.info("💡 Trạng thái hệ thống tốt. Nếu tình cờ thấy lỗi nhỏ, bạn có thể sửa lại để giúp mô hình thông minh hơn.")
+                    
+                    # Chuyển JSON thành bảng Pandas để hiển thị
+                    if predictions:
+                        df = pd.DataFrame(predictions)
+                        # Chỉ cho phép hiển thị và sửa cột Câu hỏi và Đáp án, ẩn cột x, y đi cho gọn
+                        display_df = df[["cau", "dap_an"]] 
+                    else:
+                        # Data ảo trong trường hợp API chưa trả về đúng format để UI không bị sập
+                        display_df = pd.DataFrame({"cau": [1, 2, 3], "dap_an": ["A", "B", "C"]})
+                        
+                    # Bảng tương tác cho phép sửa trực tiếp (Data Editor)
+                    edited_df = st.data_editor(display_df, use_container_width=True)
+
+                    if st.button("Lưu đáp án chuẩn & Cập nhật kho Data 🚀", type="primary", use_container_width=True):
+                        with st.spinner("Đang lưu dữ liệu chuẩn..."):
+                            try:
+                                # Gói ảnh lại
+                                feedback_files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
+                                
+                                # Gói bảng đáp án vừa sửa thành chuỗi JSON
+                                # orient="records" giúp biến bảng thành dạng: [{"cau": 1, "dap_an": "A"}, ...]
+                                feedback_data = {"correct_labels": edited_df.to_json(orient="records")}
+                                
+                                # Bắn sang cổng /feedback của FastAPI
+                                FEEDBACK_URL = "http://omr_api:8000/feedback"
+                                feedback_response = requests.post(FEEDBACK_URL, files=feedback_files, data=feedback_data)
+                                
+                                if feedback_response.status_code == 200:
+                                    st.success("✅ Cảm ơn bạn! Dữ liệu Ground Truth đã được ghi nhận an toàn.")
+                                    st.balloons() # Thả bóng bay ăn mừng cho khách hàng vui mắt
+                                else:
+                                    st.error("❌ Có lỗi xảy ra khi lưu phản hồi.")
+                                    
+                            except Exception as e:
+                                st.error(f"Không thể kết nối đến server lưu trữ: {e}")
+
                 else:
                     st.error(f"API báo lỗi: Code {response.status_code}")
                     
             except Exception as e:
                 st.error(f"Không kết nối được với API: {e}")
+                
     elif uploaded_file is None:
         st.write("👈 *Hãy tải ảnh bài thi lên ở cột bên trái để xem kết quả tại đây.*")

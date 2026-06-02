@@ -1,150 +1,112 @@
 import time
 import requests
-import numpy as np
-import cv2
-import tempfile
 import os
-from prometheus_client import start_http_server, Counter, Histogram, Gauge
 import random
-import shutil
+import subprocess
+import glob
 
 # === CẤU HÌNH ===
-DRIFT_THRESHOLD = 0.15
-RETRAIN_THRESHOLD = 50
+RETRAIN_THRESHOLD = 500
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
 API_URL = "http://omr_api:8000/predict"
-
-RETRAIN_DIR = "/app/retrain_queue"
-os.makedirs(RETRAIN_DIR, exist_ok=True)
-
+RETRAIN_DIR = "./retrain_dataset"
 DEMO_IMAGES_DIR = "./demo_images"
 
-# === METRICS ===
-TOTAL_REQUESTS = Counter('omr_total_requests', 'Tong so request')
-SUCCESS_REQUESTS = Counter('omr_success_requests', 'So request thanh cong')
-FAILED_REQUESTS = Counter('omr_failed_requests', 'So request that bai')
-RESPONSE_TIME = Histogram('omr_response_time_seconds', 'Thoi gian xu ly')
-ANSWER_A = Counter('omr_answer_A', 'So lan dap an A')
-ANSWER_B = Counter('omr_answer_B', 'So lan dap an B')
-ANSWER_C = Counter('omr_answer_C', 'So lan dap an C')
-ANSWER_D = Counter('omr_answer_D', 'So lan dap an D')
-DRIFT_SCORE = Gauge('omr_drift_score', 'Data drift score')
-API_HEALTH = Gauge('omr_api_health', 'API health')
-RETRAIN_QUEUE = Gauge('omr_retrain_queue_size', 'So anh cho retrain')
-BAD_DATA_COUNT = Gauge('omr_bad_data_count', 'So anh bi loai')
-
-ANSWER_COUNTERS = {'A': ANSWER_A, 'B': ANSWER_B, 'C': ANSWER_C, 'D': ANSWER_D}
-REFERENCE_DIST = {'A': 0.25, 'B': 0.25, 'C': 0.25, 'D': 0.25}
-answer_counts = {'A': 0, 'B': 0, 'C': 0, 'D': 0}
-total_predictions = 0
+os.makedirs(RETRAIN_DIR, exist_ok=True)
 
 def send_discord(message, color=16711680):
     try:
         requests.post(DISCORD_WEBHOOK_URL, json={
-            "embeds": [{"title": "OMR Monitoring Alert", "description": message, "color": color}]
+            "embeds": [{"title": "OMR Bot", "description": message, "color": color}]
         }, timeout=5)
     except Exception as e:
         print(f"[DISCORD ERROR] {e}", flush=True)
 
-def calculate_drift():
-    if total_predictions == 0:
-        return 0.0
-    current_dist = {k: v / total_predictions for k, v in answer_counts.items()}
-    return sum(abs(current_dist[k] - REFERENCE_DIST[k]) for k in REFERENCE_DIST) / 2
-
 def check_api_health():
     try:
         r = requests.get("http://omr_engine:8000/docs", timeout=5)
-        return 1 if r.status_code == 200 else 0
+        return True if r.status_code == 200 else False
     except:
-        return 0
+        return False
 
-def get_queue_size(folder):
-    return len([f for f in os.listdir(folder) if f.endswith('.jpg')])
+def check_and_trigger():
+    """Hàm kiểm tra kho data và kích hoạt Retrain Pipeline"""
+    # Đếm cặp file hoàn chỉnh (có cả JSON) thay vì chỉ đếm ảnh
+    ready_samples = len(glob.glob(os.path.join(RETRAIN_DIR, "*_label.json")))
+    
+    if ready_samples > 0:
+        print(f"[KIỂM TRA DATA] Kho đang có {ready_samples}/{RETRAIN_THRESHOLD} mẫu sẵn sàng...", flush=True)
+    
+    if ready_samples >= RETRAIN_THRESHOLD:
+        msg = f"🚀 Đã gom đủ {ready_samples} mẫu Ground Truth từ khách hàng. Bắt đầu kích hoạt Pipeline MLOps!"
+        print(msg, flush=True)
+        send_discord(msg, color=3447003) # Màu xanh dương báo hiệu Pipeline
+        
+        # Kéo script gom data và bắn lên DVC
+        result = subprocess.run(["python", "src/integrate_feedback.py"])
+        
+        if result.returncode == 0:
+            print("✅ DVC Pipeline hoàn tất. Kích hoạt MLflow...", flush=True)
+            send_discord("⏳ **Dữ liệu chuẩn đã lên nòng.** Đang tiến hành Retrain mô hình...", color=16776960) # Màu vàng chờ đợi
+            
+            # Bắt đầu Train và "nghe ngóng" kết quả (capture_output)
+            train_result = subprocess.run(["mlflow", "run", "."], capture_output=True, text=True)
+            
+            if train_result.returncode == 0:
+                # Nếu train mượt mà
+                send_discord("✅ **Retrain thành công xuất sắc!** Mô hình mới đã được cập nhật.", color=65280)
+            else:
+                # Nếu quá trình train bị lỗi (Tràn RAM, sai shape tensor, v.v.)
+                # Trích xuất 500 ký tự cuối cùng của log lỗi để gửi lên Discord
+                error_log = train_result.stderr[-500:] if train_result.stderr else "Lỗi không xác định."
+                send_discord(f"🚨 **Quá trình Retrain thất bại!**\nChi tiết lỗi:\n```text\n{error_log}\n```", color=16711680)
+                
+        else:
+            # Lỗi ở khâu trộn Data hoặc đẩy DVC
+            send_discord("❌ **Lỗi ở khâu chuẩn bị Dữ liệu/DVC!** Vui lòng kiểm tra lại data đầu vào.", color=16711680)
 
-def simulate_and_monitor():
-    global total_predictions
-
-    # 1. Lấy danh sách tất cả file ảnh trong thư mục
+def simulate_traffic():
+    """Bắn ảnh để duy trì biểu đồ (Không đụng chạm logic Drift nữa)"""
     try:
         available_images = [f for f in os.listdir(DEMO_IMAGES_DIR) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
         if not available_images:
-            print("[WARN] Thư mục demo_images đang trống! Vui lòng thêm ảnh.", flush=True)
             return
             
-        # 2. Bốc ngẫu nhiên 1 file ảnh
         random_image_name = random.choice(available_images)
         image_path = os.path.join(DEMO_IMAGES_DIR, random_image_name)
-    except FileNotFoundError:
-        print(f"[ERROR] Không tìm thấy thư mục {DEMO_IMAGES_DIR}", flush=True)
-        return
-
-    start = time.time()
-    try:
-        # 3. Gửi thẳng file ảnh thật sang FastAPI
+        
         with open(image_path, 'rb') as f:
-            response = requests.post(API_URL, files={'file': (random_image_name, f, 'image/jpeg')}, timeout=30)
-            
-        elapsed = time.time() - start
-        RESPONSE_TIME.observe(elapsed)
-        TOTAL_REQUESTS.inc()
-
-        if response.status_code == 200:
-            SUCCESS_REQUESTS.inc()
-            data = response.json()
-            
-            # Kiểm tra xem API có trả về trạng thái từ chối không (VD: ảnh thật nhưng bị nhòe)
-            if data.get("trang_thai") == "từ chối":
-                print(f"[REJECTED] File {random_image_name} bị từ chối: {data.get('chi_tiet')}", flush=True)
-                return
-
-            answers = data.get('ket_qua_cham_diem', [])
-            for ans in answers:
-                if ans in ANSWER_COUNTERS:
-                    ANSWER_COUNTERS[ans].inc()
-                    answer_counts[ans] += 1
-                    total_predictions += 1
-
-            drift = calculate_drift()
-            DRIFT_SCORE.set(drift)
-            print(f"[OK] {random_image_name} -> {len(answers)} đáp án | drift={drift:.3f} | time={elapsed:.2f}s", flush=True)
-
-            if drift > DRIFT_THRESHOLD:
-                # Nếu drift cao, copy ảnh thật này sang thư mục chờ retrain
-                
-                filename = f"drift_{int(time.time())}.jpg"
-                shutil.copy(image_path, os.path.join(RETRAIN_DIR, filename))
-                
-                queue_size = get_queue_size(RETRAIN_DIR)
-                RETRAIN_QUEUE.set(queue_size)
-                print(f"[QUEUE] Đã lưu ảnh retrain: {filename} | Tổng: {queue_size}", flush=True)
-                
-                send_discord(
-                    f"🔴 **Drift cao!**\nĐã đưa `{random_image_name}` vào kho Retrain.\nDrift: {drift:.3f} | Queue: {queue_size}/{RETRAIN_THRESHOLD}",
-                    color=16711680
-                )
-                
-        else:
-            FAILED_REQUESTS.inc()
-            print(f"[FAIL] Status: {response.status_code}", flush=True)
-            
-    except Exception as e:
-        FAILED_REQUESTS.inc()
-        TOTAL_REQUESTS.inc()
-        print(f"[ERROR] {e}", flush=True)
+            requests.post(API_URL, files={'file': (random_image_name, f, 'image/jpeg')}, timeout=10)
+    except Exception:
+        pass
 
 if __name__ == '__main__':
-    port = 8890
-    print(f"=== Khoi dong Monitoring Service tai port {port} ===", flush=True)
-    start_http_server(port)
-    send_discord("✅ **Monitoring Service khởi động thành công!**\nĐang theo dõi model OMR...", color=65280)
+    print("=== Bot Giám Sát OMR Đã Khởi Động ===", flush=True)
+    send_discord("✅ **Bot Giám Sát đã thức dậy!** Đang theo dõi kho data để Retrain...", color=65280)
+    
+    previous_health_status = True 
+    
     while True:
-        health = check_api_health()
-        API_HEALTH.set(health)
-        RETRAIN_QUEUE.set(get_queue_size(RETRAIN_DIR))
-        print(f"[HEALTH] API={'OK' if health else 'DOWN'}", flush=True)
-        if health:
-            simulate_and_monitor()
+        current_health = check_api_health()
+        
+        # 1. LOGIC BÁO ĐỘNG SỐNG/CHẾT (Chỉ báo khi trạng thái thay đổi)
+        if current_health != previous_health_status:
+            if current_health == True:
+                # API từ trạng thái Chết -> Sống lại
+                send_discord("🟩 **HỆ THỐNG PHỤC HỒI:** API OMR đã hoạt động trở lại! Mọi thứ đang chạy bình thường.", color=65280)
+            else:
+                # API từ trạng thái Sống -> Lăn ra chết
+                send_discord("🚨 **CẢNH BÁO MẤT KẾT NỐI:** API OMR vừa bị sập hoặc không phản hồi! Vui lòng kiểm tra Docker ngay lập tức.", color=16711680)
+            
+            # Cập nhật lại bộ nhớ của Bot
+            previous_health_status = current_health
+
+        # 2. LOGIC ĐI TUẦN TRA & GIẢ LẬP
+        if current_health:
+            # Chỉ đi tuần tra retrain và bắn data giả khi API đang sống
+            check_and_trigger()
+            simulate_traffic()
         else:
-            print("[WARN] API chua san sang, cho...", flush=True)
+            print("[WARN] API đang sập, tạm dừng các hoạt động tuần tra...", flush=True)
+            
         time.sleep(30)
