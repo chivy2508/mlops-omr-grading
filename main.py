@@ -10,16 +10,14 @@ from prometheus_client import make_asgi_app, Counter, Gauge
 # ==========================================
 # 1. CẤU HÌNH MLFLOW & MINIO 
 # ==========================================
-os.environ["AWS_ACCESS_KEY_ID"] = "admin"
-os.environ["AWS_SECRET_ACCESS_KEY"] = "password123"
 
-os.environ["MLFLOW_S3_ENDPOINT_URL"] = "http://minio:9000"
-mlflow.set_tracking_uri("http://mlflow:5000")
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
+mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+
 
 app = FastAPI(title="OMR Grading Engine API")
 
-DISCORD_WEBHOOK = "https://discordapp.com/api/webhooks/1510835063229513749/Q9IL2feBSAqrteKmzKIOQCmp8e3BYH7ABjQW27so7uQDrNFKaGk4pKA0rqudMSGKMvyo"
-
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
 
 metrics_app = make_asgi_app()
 app.mount("/metrics", metrics_app)

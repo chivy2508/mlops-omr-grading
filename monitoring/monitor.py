@@ -11,7 +11,7 @@ import shutil
 # === CẤU HÌNH ===
 DRIFT_THRESHOLD = 0.15
 RETRAIN_THRESHOLD = 50
-DISCORD_WEBHOOK = "https://discordapp.com/api/webhooks/1510835063229513749/Q9IL2feBSAqrteKmzKIOQCmp8e3BYH7ABjQW27so7uQDrNFKaGk4pKA0rqudMSGKMvyo"
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
 API_URL = "http://omr_api:8000/predict"
 
 RETRAIN_DIR = "/app/retrain_queue"
