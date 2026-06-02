@@ -6,6 +6,7 @@ import tempfile
 import os
 from prometheus_client import start_http_server, Counter, Histogram, Gauge
 import random
+import shutil
 
 # === CẤU HÌNH ===
 DRIFT_THRESHOLD = 0.15

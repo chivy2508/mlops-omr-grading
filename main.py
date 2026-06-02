@@ -18,6 +18,9 @@ mlflow.set_tracking_uri("http://mlflow:5000")
 
 app = FastAPI(title="OMR Grading Engine API")
 
+DISCORD_WEBHOOK = "https://discordapp.com/api/webhooks/1510835063229513749/Q9IL2feBSAqrteKmzKIOQCmp8e3BYH7ABjQW27so7uQDrNFKaGk4pKA0rqudMSGKMvyo"
+
+
 metrics_app = make_asgi_app()
 app.mount("/metrics", metrics_app)
 
@@ -38,7 +41,7 @@ total_predictions = 0
 
 def update_drift_score():
     """Hàm tự động tính toán lại độ lệch khi có đáp án mới"""
-    global total_predictions
+    
     if total_predictions == 0:
         return
     current_dist = {k: v / total_predictions for k, v in answer_counts.items()}
