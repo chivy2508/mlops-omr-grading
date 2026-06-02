@@ -48,7 +48,7 @@ services:
       
       - MLFLOW_S3_ENDPOINT_URL=http://minio:9000
       - MLFLOW_TRACKING_URI=http://mlflow:5000
-      - DISCORD_WEBHOOK_URL = https://discordapp.com/api/webhooks/1510835063229513749/Q9IL2feBSAqrteKmzKIOQCmp8e3BYH7ABjQW27so7uQDrNFKaGk4pKA0rqudMSGKMvyo
+      - DISCORD_WEBHOOK_URL=https://discordapp.com/api/webhooks/1510835063229513749/Q9IL2feBSAqrteKmzKIOQCmp8e3BYH7ABjQW27so7uQDrNFKaGk4pKA0rqudMSGKMvyo
     depends_on:
       - minio
       - mlflow
@@ -57,7 +57,7 @@ services:
     build: ./monitoring
     container_name: omr_monitor
     environment:
-     - DISCORD_WEBHOOK_URL = https://discordapp.com/api/webhooks/1510835063229513749/Q9IL2feBSAqrteKmzKIOQCmp8e3BYH7ABjQW27so7uQDrNFKaGk4pKA0rqudMSGKMvyo
+     - DISCORD_WEBHOOK_URL=https://discordapp.com/api/webhooks/1510835063229513749/Q9IL2feBSAqrteKmzKIOQCmp8e3BYH7ABjQW27so7uQDrNFKaGk4pKA0rqudMSGKMvyo
     depends_on:
       - omr_api
     volumes:
