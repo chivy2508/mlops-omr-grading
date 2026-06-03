@@ -14,8 +14,16 @@ import base64
 # 1. CẤU HÌNH MLFLOW & MINIO 
 # ==========================================
 
+
+
+RETRAIN_DIR = "./retrain_dataset"
+os.makedirs(RETRAIN_DIR, exist_ok=True)
+
+STATE_FILE = os.path.join(RETRAIN_DIR, "drift_state.json")
+
 MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+
 
 
 app = FastAPI(title="OMR Grading Engine API")
@@ -39,13 +47,52 @@ REFERENCE_DIST = {'A': 0.25, 'B': 0.25, 'C': 0.25, 'D': 0.25}
 answer_counts = {'A': 0, 'B': 0, 'C': 0, 'D': 0}
 total_predictions = 0
 
-def update_drift_score():
-    """Hàm tự động tính toán lại độ lệch khi có đáp án mới"""
+
+# --- QUẢN LÝ TRẠNG THÁI DRIFT ---
+REFERENCE_DIST = {'A': 0.25, 'B': 0.25, 'C': 0.25, 'D': 0.25}
+
+def load_drift_state():
+    """Tải dữ liệu cũ từ ổ cứng lên RAM khi API khởi động"""
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    # Mặc định nếu chưa có file
+    return {"total_predictions": 0, "answer_counts": {"A": 0, "B": 0, "C": 0, "D": 0}}
+
+def save_drift_state(state):
+    """Ghi đè dữ liệu mới xuống ổ cứng"""
+    with open(STATE_FILE, "w") as f:
+        json.dump(state, f)
+
+# Khởi tạo state toàn cục
+drift_state = load_drift_state()
+
+def update_drift_score(final_answers):
+    """Hàm tự động tính toán lại độ lệch và ghi xuống đĩa"""
+    global drift_state
     
-    if total_predictions == 0:
+    # 1. Cập nhật số liệu mới
+    for ans in final_answers:
+        if ans in drift_state["answer_counts"]:
+            drift_state["answer_counts"][ans] += 1
+            drift_state["total_predictions"] += 1
+            # Cập nhật luôn metrics cho Prometheus
+            ANSWER_COUNTERS[ans].inc()
+            
+    # 2. Lưu ngay xuống file JSON bảo toàn tính mạng
+    save_drift_state(drift_state)
+    
+    # 3. Tính toán độ lệch
+    total = drift_state["total_predictions"]
+    if total == 0:
         return 0.0
-    current_dist = {k: v / total_predictions for k, v in answer_counts.items()}
+        
+    current_dist = {k: v / total for k, v in drift_state["answer_counts"].items()}
     drift = sum(abs(current_dist[k] - REFERENCE_DIST[k]) for k in REFERENCE_DIST) / 2
+    
     DRIFT_SCORE.set(drift)
     return drift
 
@@ -65,9 +112,11 @@ MODEL_URI = "models:/OMR_Grading_Engine@production"
 try:
     model = mlflow.pytorch.load_model(MODEL_URI)
     model.eval()
-    print(" Nạp mô hình thành công!")
+    print("✅ Nạp mô hình thành công!")
 except Exception as e:
-    print(f" Lỗi tải mô hình: {e}")
+    print(f"🚨 Lỗi tải mô hình chí mạng: {e}")
+    import sys
+    sys.exit(1)
 
 def check_blur_and_brightness(image_gray: np.ndarray):
     laplacian_var = cv2.Laplacian(image_gray, cv2.CV_64F).var()
@@ -77,7 +126,7 @@ def check_blur_and_brightness(image_gray: np.ndarray):
     mean_brightness = np.mean(image_gray)
     if mean_brightness < 30: 
         return False, f"Ảnh quá tối (độ sáng: {mean_brightness:.1f})"
-    if mean_brightness > 245: 
+    if mean_brightness > 235: 
         return False, f"Ảnh quá sáng/chói (độ sáng: {mean_brightness:.1f})"
     return True, "OK"
 
@@ -175,8 +224,6 @@ def get_dynamic_start(binary_image: np.ndarray, default_x=141.0, default_y=343.0
     # Nếu xui xẻo giấy bị rách/mất ô vuông đen, trả về tọa độ cứng dự phòng để API không sập
     return default_x, default_y
 
-RETRAIN_DIR = "./retrain_dataset"
-os.makedirs(RETRAIN_DIR, exist_ok=True)
 
 @app.post("/feedback")
 async def save_human_feedback(
@@ -244,12 +291,6 @@ async def predict_omr(file: UploadFile = File(...)):
             reason_paper = "Không tìm thấy tờ phiếu thi hợp lệ."
             send_discord_alert(f"🚨 Từ chối `{file.filename}`: {reason_paper}")
             return {"trang_thai": "từ chối", "chi_tiet": reason_paper}
-        
-        if aligned_img is None:
-            # 🚨 BẮN CẢNH BÁO DISCORD Ở ĐÂY
-            reason = "Không tìm thấy tờ phiếu thi hợp lệ."
-            send_discord_alert(f"🚨 Đã từ chối file `{file.filename}`. Lý do: {reason}")
-            return {"trang_thai": "từ chối", "chi_tiet": f"{reason} Chụp lại rõ hơn, đủ 4 góc, dưới ánh sáng đều."}
             
         # 2. Làm sạch nền
         final_processed_image = clean_and_binarize(aligned_img)
@@ -316,7 +357,7 @@ async def predict_omr(file: UploadFile = File(...)):
                 answer_counts[ans] += 1
                 total_predictions += 1
                 
-        current_drift = update_drift_score()
+        current_drift = update_drift_score(final_answers)
         
         _, buffer = cv2.imencode('.jpg', aligned_img)
         aligned_base64 = base64.b64encode(buffer).decode('utf-8')

@@ -39,6 +39,7 @@ services:
 
   omr_api:
     build: .
+    restart: unless-stopped
     container_name: omr_engine
     ports:
       - "8001:8000"
@@ -52,6 +53,17 @@ services:
     depends_on:
       - minio
       - mlflow
+    volumes:
+      - ./data_retrain:/app/retrain_dataset
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 2G
 
   monitor:
     build: ./monitoring

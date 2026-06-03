@@ -38,33 +38,35 @@ def check_and_trigger():
         print(f"[KIỂM TRA DATA] Kho đang có {ready_samples}/{RETRAIN_THRESHOLD} mẫu sẵn sàng...", flush=True)
     
     if ready_samples >= RETRAIN_THRESHOLD:
-        msg = f"🚀 Đã gom đủ {ready_samples} mẫu Ground Truth từ khách hàng. Bắt đầu kích hoạt Pipeline MLOps!"
+        msg = f"🚀 Đã gom đủ {ready_samples} mẫu. Bắt đầu kích hoạt Pipeline MLOps!"
         print(msg, flush=True)
-        send_discord(msg, color=3447003) # Màu xanh dương báo hiệu Pipeline
+        send_discord(msg, color=3447003)
         
-        # Kéo script gom data và bắn lên DVC
-        result = subprocess.run(["python", "src/integrate_feedback.py"])
+        # GIAO TOÀN QUYỀN CHO DVC (Nó sẽ tự động chạy split -> train -> evaluate)
+        send_discord("⏳ **Đang chạy DVC Pipeline (Split Data -> Train -> Evaluate)...**", color=16776960)
         
-        if result.returncode == 0:
-            print("✅ DVC Pipeline hoàn tất. Kích hoạt MLflow...", flush=True)
-            send_discord("⏳ **Dữ liệu chuẩn đã lên nòng.** Đang tiến hành Retrain mô hình...", color=16776960) # Màu vàng chờ đợi
+        # dvc repro sẽ tự động nhìn vào dvc.yaml để chạy từ A-Z
+        pipeline_result = subprocess.run(["dvc", "repro"], capture_output=True, text=True)
+        
+        if pipeline_result.returncode == 0:
+            send_discord("✅ **Retrain thành công xuất sắc!**", color=65280)
             
-            # Bắt đầu Train và "nghe ngóng" kết quả (capture_output)
-            train_result = subprocess.run(["mlflow", "run", "."], capture_output=True, text=True)
+            # --- ĐÂY LÀ BƯỚC ĐÓNG GÓI VERSION DATA MỚI ---
+            # DVC repro thành công sẽ tạo ra file dvc.lock mới. 
+            # Phải commit file này lên Git thì mới tính là 1 Version!
+            subprocess.run(["git", "add", "dvc.lock"])
+            subprocess.run(["git", "commit", "-m", f"Auto-retrain: Bổ sung {ready_samples} mẫu mới"])
+            subprocess.run(["dvc", "push"]) # (Tùy chọn) Đẩy data mới lên MinIO/S3
             
-            if train_result.returncode == 0:
-                # Nếu train mượt mà
-                send_discord("✅ **Retrain thành công xuất sắc!** Mô hình mới đã được cập nhật.", color=65280)
-                
-            else:
-                # Nếu quá trình train bị lỗi (Tràn RAM, sai shape tensor, v.v.)
-                # Trích xuất 500 ký tự cuối cùng của log lỗi để gửi lên Discord
-                error_log = train_result.stderr[-500:] if train_result.stderr else "Lỗi không xác định."
-                send_discord(f"🚨 **Quá trình Retrain thất bại!**\nChi tiết lỗi:\n```text\n{error_log}\n```", color=16711680)
+            # Gọi API Reload Model (Nếu bạn dùng kịch bản auto-reload)
+            try:
+                requests.post("http://omr_api:8000/reload-model", timeout=10)
+            except Exception:
+                pass
                 
         else:
-            # Lỗi ở khâu trộn Data hoặc đẩy DVC
-            send_discord("❌ **Lỗi ở khâu chuẩn bị Dữ liệu/DVC!** Vui lòng kiểm tra lại data đầu vào.", color=16711680)
+            error_log = pipeline_result.stderr[-500:] if pipeline_result.stderr else "Lỗi pipeline."
+            send_discord(f"🚨 **Pipeline thất bại!**\nChi tiết:\n```text\n{error_log}\n```", color=16711680)
 
 def simulate_traffic():
     """Bắn ảnh để duy trì biểu đồ (Không đụng chạm logic Drift nữa)"""
