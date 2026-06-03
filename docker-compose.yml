@@ -43,13 +43,12 @@ services:
     container_name: omr_engine
     ports:
       - "8001:8000"
+    env_file:
+      - .env
     environment:
-      - AWS_ACCESS_KEY_ID=admin
-      - AWS_SECRET_ACCESS_KEY=password123
       
       - MLFLOW_S3_ENDPOINT_URL=http://minio:9000
       - MLFLOW_TRACKING_URI=http://mlflow:5000
-      - DISCORD_WEBHOOK_URL=https://discordapp.com/api/webhooks/1510835063229513749/Q9IL2feBSAqrteKmzKIOQCmp8e3BYH7ABjQW27so7uQDrNFKaGk4pKA0rqudMSGKMvyo
     depends_on:
       - minio
       - mlflow
@@ -68,8 +67,6 @@ services:
   monitor:
     build: ./monitoring
     container_name: omr_monitor
-    environment:
-     - DISCORD_WEBHOOK_URL=https://discordapp.com/api/webhooks/1510835063229513749/Q9IL2feBSAqrteKmzKIOQCmp8e3BYH7ABjQW27so7uQDrNFKaGk4pKA0rqudMSGKMvyo
     depends_on:
       - omr_api
     volumes:

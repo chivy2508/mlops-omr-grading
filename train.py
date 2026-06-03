@@ -6,8 +6,22 @@ import torch.nn as nn
 import torchvision.models as models
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from src.dataset import OMRDataset # Gọi file dataset.py bạn đã tạo lúc nãy
+from src.dataset import OMRDataset
+import numpy as np
+import random
 
+def seed_everything(seed=42):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    # Tắt tính năng tối ưu non-deterministic của cuDNN
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+seed_everything(42)
 
 os.environ["AWS_ACCESS_KEY_ID"] = "admin"
 os.environ["AWS_SECRET_ACCESS_KEY"] = "password123"
