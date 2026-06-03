@@ -210,9 +210,17 @@ async def save_human_feedback(
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-# ==========================================
-# 3. GIAO THỨC API
-# ==========================================
+@app.post("/reload-model")
+async def reload_model():
+    global model
+    try:
+        print("Đang kéo mô hình Production mới nhất về...")
+        # Kéo model mới đè lên biến model cũ
+        model = mlflow.pytorch.load_model("models:/OMR_Grading_Engine@production")
+        model.eval()
+        return {"status": "thành công", "message": "Đã cập nhật model Production mới nhất lên RAM!"}
+    except Exception as e:
+        return {"status": "lỗi", "message": str(e)}
 @app.post("/predict")
 async def predict_omr(file: UploadFile = File(...)):
     TOTAL_REQUESTS.inc()
@@ -259,11 +267,14 @@ async def predict_omr(file: UploadFile = File(...)):
         label_map_reverse = {0: 'A', 1: 'B', 2: 'C', 3: 'D'}
         final_answers = [label_map_reverse[ans.item()] for ans in predictions]
 
-        START_X, START_Y = get_dynamic_start(final_processed_image, default_x=141.0, default_y=343.0)
+        #START_X, START_Y = get_dynamic_start(final_processed_image, default_x=141.0, default_y=343.0)
 
-        X_STRIDE = 30.5  # Khoảng cách giữa A, B, C, D
-        Y_STRIDE = 23.7  # Khoảng cách giữa Câu 1, Câu 2... dọc xuống
-        COL_STRIDE = 179 # Khoảng cách sang cột mới
+        START_X = 135.0  # Chỉnh số này cho đến khi cột 1 khớp (Tăng -> Dịch phải, Giảm -> Dịch trái)
+        START_Y = 665.0
+
+        X_STRIDE = 30.5 # Khoảng cách giữa A, B, C, D
+        Y_STRIDE = 35  # Khoảng cách giữa Câu 1, Câu 2... dọc xuống
+        COL_STRIDE = 150 # Khoảng cách sang cột mới
         BLOCK_GAP = 0    # Khoảng trống giữa các block (nếu có)
         
         predictions_detail = []

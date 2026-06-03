@@ -4,8 +4,9 @@ import base64
 import cv2
 import pandas as pd
 import numpy as np
-st.set_page_config(page_title="Demo OMR API", page_icon="⚡", layout="wide")
+import torch
 
+st.set_page_config(page_title="Demo OMR API", page_icon="⚡", layout="wide")
 
 def get_base64_image(image_path):
     try:
@@ -21,31 +22,23 @@ st.markdown("""
 [data-testid="stHeader"] {
     background-color: transparent !important;
 }
-
-
 [data-testid="stToolbar"] button {
     background-color: transparent !important; 
 }
-
-
 [data-testid="stToolbar"] button svg {
     fill: #000000 !important; 
     stroke: #000000 !important;
     stroke-width: 0.8px !important; 
 }
-
-/* Đẩy ảnh nền ra TOÀN BỘ trang web */
 .stApp {
     background-image: url("https://cdn2.fptshop.com.vn/unsafe/Uploads/images/tin-tuc/174931/Originals/background%20gradient%20(28).jpg"); 
     background-size: cover;
     background-position: center;
     background-attachment: fixed;
 }
-
 [data-testid="stAppViewContainer"] {
     background-color: transparent !important;
 }
-
 .block-container {
     background: rgba(255, 255, 255, 0.08) !important;
     backdrop-filter: blur(20px) !important;
@@ -55,27 +48,21 @@ st.markdown("""
     padding: 2rem 3rem !important;
     box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4) !important;
 }
-
 h1, h2, h3, p, label, .stMarkdown, div[data-testid="stText"] {
     color: #ffffff !important;
     text-shadow: 1px 1px 2px rgba(0,0,0,0.5); 
 }
-
 [data-testid="stFileUploadDropzone"] {
     background-color: rgba(0, 0, 0, 0.3) !important;
     border: 2px dashed rgba(255, 255, 255, 0.6) !important;
     border-radius: 15px !important;
 }
-
-
 [data-testid="stJson"], pre, code {
     background-color: rgba(14, 17, 23, 0.85) !important; 
     border: 1px solid rgba(255, 255, 255, 0.2) !important;
     border-radius: 10px !important;
     padding: 15px !important;
 }
-
-
 .stButton > button {
     background: linear-gradient(135deg, #ff7e5f, #feb47b) !important; 
     border: none !important;
@@ -110,7 +97,9 @@ with col1:
     uploaded_file = st.file_uploader("Tải ảnh bài thi lên đây (JPG, JPEG, PNG)...", type=["jpg", "jpeg", "png"])
     
     if uploaded_file is not None:
+        # 👇 BỎ DẤU # Ở DÒNG NÀY ĐỂ HIỆN LẠI ẢNH NHÉ
         st.image(uploaded_file, caption="Ảnh bài thi đầu vào", use_container_width=True)
+        
         submit_button = st.button("🚀 Gửi qua API Chấm Điểm", use_container_width=True, type="primary")
     else:
         submit_button = False
@@ -119,6 +108,9 @@ with col1:
 with col2:
     st.subheader("📥 2. Kết quả chấm & Phản hồi")
     
+    if "api_data" not in st.session_state:
+        st.session_state.api_data = None
+
     if uploaded_file is not None and submit_button:
         with st.spinner("Đang đợi Backend kéo Model và xử lý ảnh..."):
             try:
@@ -128,90 +120,54 @@ with col2:
                 response = requests.post(FASTAPI_URL, files=files)
                 
                 if response.status_code == 200:
-                    data = response.json()
+                    st.session_state.api_data = response.json()
                     st.success("🎉 API trả kết quả thành công!")
-                    
-                    # ==========================================
-                    # BƯỚC 1: VẼ CHẤM ĐỎ LÊN ẢNH BẰNG OPENCV
-                    # ==========================================
-                    # Chuyển data dạng byte của file upload thành mảng ảnh OpenCV
-                    aligned_b64 = data.get("aligned_image")
-                    
-                    if aligned_b64:
-                        # Giải mã ảnh xịn 800x1200 từ API
-                        img_data = base64.b64decode(aligned_b64)
-                        np_arr = np.frombuffer(img_data, np.uint8)
-                        # Dùng IMREAD_COLOR để biến ảnh xám thành ảnh màu, vẽ chấm đỏ mới lên màu được
-                        img_cv2 = cv2.imdecode(np_arr, cv2.IMREAD_COLOR) 
-                    else:
-                        # Dự phòng nếu API bị lỗi không trả ảnh
-                        file_bytes = np.asarray(bytearray(uploaded_file.getvalue()), dtype=np.uint8)
-                        img_cv2 = cv2.imdecode(file_bytes, 1)
-
-                    predictions = data.get("predictions", [])
-                    
-                    for item in predictions:
-                        x = item.get("x")
-                        y = item.get("y")
-                        if x is not None and y is not None:
-                            cv2.circle(img_cv2, (int(x), int(y)), radius=15, color=(0, 0, 255), thickness=-1)
-
-                    # Hiển thị lên màn hình
-                    st.image(img_cv2, channels="BGR", caption="Ảnh nắn thẳng & Nhận diện (Chấm đỏ)", use_container_width=True)
-                    
-                    # ==========================================
-                    # BƯỚC 2: BẢNG DATA ĐỂ KHÁCH HÀNG SỬA LỖI
-                    # ==========================================
-                    st.markdown("### ✍️ Kiểm tra và Dạy lại mô hình")
-                    
-                    # Lấy điểm Drift từ API (Giả định API có trả về thông số này)
-                    drift_score = data.get("drift_score", 0.0)
-                    
-                    if drift_score > 0.15:
-                        st.warning(f"⚠️ Cảnh báo: Độ lệch dữ liệu hơi cao (Drift: {drift_score}). Vui lòng dò kỹ các chấm đỏ và sửa lại bảng dưới đây nếu máy đoán sai!")
-                    else:
-                        st.info("💡 Trạng thái hệ thống tốt. Nếu tình cờ thấy lỗi nhỏ, bạn có thể sửa lại để giúp mô hình thông minh hơn.")
-                    
-                    # Chuyển JSON thành bảng Pandas để hiển thị
-                    if predictions:
-                        df = pd.DataFrame(predictions)
-                        # Chỉ cho phép hiển thị và sửa cột Câu hỏi và Đáp án, ẩn cột x, y đi cho gọn
-                        display_df = df[["cau", "dap_an"]] 
-                    else:
-                        # Data ảo trong trường hợp API chưa trả về đúng format để UI không bị sập
-                        display_df = pd.DataFrame({"cau": [1, 2, 3], "dap_an": ["A", "B", "C"]})
-                        
-                    # Bảng tương tác cho phép sửa trực tiếp (Data Editor)
-                    edited_df = st.data_editor(display_df, use_container_width=True)
-
-                    if st.button("Lưu đáp án chuẩn & Cập nhật kho Data 🚀", type="primary", use_container_width=True):
-                        with st.spinner("Đang lưu dữ liệu chuẩn..."):
-                            try:
-                                # Gói ảnh lại
-                                feedback_files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
-                                
-                                # Gói bảng đáp án vừa sửa thành chuỗi JSON
-                                # orient="records" giúp biến bảng thành dạng: [{"cau": 1, "dap_an": "A"}, ...]
-                                feedback_data = {"correct_labels": edited_df.to_json(orient="records")}
-                                
-                                # Bắn sang cổng /feedback của FastAPI
-                                FEEDBACK_URL = "http://omr_api:8000/feedback"
-                                feedback_response = requests.post(FEEDBACK_URL, files=feedback_files, data=feedback_data)
-                                
-                                if feedback_response.status_code == 200:
-                                    st.success("✅ Cảm ơn bạn! Dữ liệu Ground Truth đã được ghi nhận an toàn.")
-                                    st.balloons() # Thả bóng bay ăn mừng cho khách hàng vui mắt
-                                else:
-                                    st.error("❌ Có lỗi xảy ra khi lưu phản hồi.")
-                                    
-                            except Exception as e:
-                                st.error(f"Không thể kết nối đến server lưu trữ: {e}")
-
                 else:
                     st.error(f"API báo lỗi: Code {response.status_code}")
-                    
             except Exception as e:
                 st.error(f"Không kết nối được với API: {e}")
                 
     elif uploaded_file is None:
         st.write("👈 *Hãy tải ảnh bài thi lên ở cột bên trái để xem kết quả tại đây.*")
+
+    if st.session_state.api_data is not None:
+        data = st.session_state.api_data
+        
+        st.markdown("### ✍️ Kiểm tra và Dạy lại mô hình")
+        drift_score = data.get("drift_score", 0.0)
+        
+        if drift_score > 0.05:
+            st.warning(f"⚠️ Cảnh báo: Độ lệch dữ liệu hơi cao (Drift: {drift_score}). Vui lòng dò kỹ các chấm đỏ và sửa lại bảng dưới đây nếu máy đoán sai!")
+        else:
+            st.info("💡 Trạng thái hệ thống tốt. Nếu tình cờ thấy lỗi nhỏ, bạn có thể sửa lại để giúp mô hình thông minh hơn.")
+        
+        predictions = data.get("predictions", [])
+        if predictions:
+            df = pd.DataFrame(predictions)
+            display_df = df[["cau", "dap_an"]] 
+        else:
+            display_df = pd.DataFrame({"cau": [1, 2, 3], "dap_an": ["A", "B", "C"]})
+            
+        with st.form("feedback_form"):
+            edited_df = st.data_editor(display_df, use_container_width=True)
+            submit_feedback = st.form_submit_button("Lưu đáp án chuẩn & Cập nhật kho Data 🚀", type="primary", use_container_width=True)
+
+            if submit_feedback:
+                with st.spinner("Đang lưu dữ liệu chuẩn..."):
+                    try:
+                        feedback_files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
+                        feedback_data = {"correct_labels": edited_df.to_json(orient="records")}
+                        
+                        FEEDBACK_URL = "http://omr_api:8000/feedback"
+                        feedback_response = requests.post(FEEDBACK_URL, files=feedback_files, data=feedback_data)
+                        
+                        if feedback_response.status_code == 200:
+                            st.success("✅ Cảm ơn bạn! Dữ liệu Ground Truth đã được ghi nhận an toàn.")
+                            st.balloons()
+                            
+                            st.session_state.api_data = None
+                            st.rerun()
+                        else:
+                            st.error("❌ Có lỗi xảy ra khi lưu phản hồi.")
+                    except Exception as e:
+                        st.error(f"Không thể kết nối đến server lưu trữ: {e}")

@@ -7,6 +7,7 @@ opencv-python-headless
 prometheus-client==0.17.1
 numpy
 streamlit
+torchvision
 requests
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch

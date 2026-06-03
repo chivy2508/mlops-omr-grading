@@ -6,7 +6,7 @@ import subprocess
 import glob
 
 # === CẤU HÌNH ===
-RETRAIN_THRESHOLD = 500
+RETRAIN_THRESHOLD = 10
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
 API_URL = "http://omr_api:8000/predict"
 RETRAIN_DIR = "./retrain_dataset"
@@ -55,6 +55,7 @@ def check_and_trigger():
             if train_result.returncode == 0:
                 # Nếu train mượt mà
                 send_discord("✅ **Retrain thành công xuất sắc!** Mô hình mới đã được cập nhật.", color=65280)
+                
             else:
                 # Nếu quá trình train bị lỗi (Tràn RAM, sai shape tensor, v.v.)
                 # Trích xuất 500 ký tự cuối cùng của log lỗi để gửi lên Discord
