@@ -7,4 +7,6 @@ venv/
 mlruns/
 .vscode/
 .idea/
+data_retrain/
+retrain_dataset/
 .DS_Store
