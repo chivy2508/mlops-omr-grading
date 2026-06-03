@@ -72,7 +72,7 @@ drift_state = load_drift_state()
 
 def update_drift_score(final_answers):
     """Hàm tự động tính toán lại độ lệch và ghi xuống đĩa"""
-    global drift_state
+    
     
     # 1. Cập nhật số liệu mới
     for ans in final_answers:
