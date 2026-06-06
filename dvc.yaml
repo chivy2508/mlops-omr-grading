@@ -1,6 +1,6 @@
 stages:
   stages:
-  # Bước 1: Trộn ảnh cũ + ảnh mới khách hàng vừa sửa (Bạn đã có)
+  # Bước 1: Trộn ảnh cũ + ảnh mới khách hàng vừa sửa
   split_dataset:
     cmd: python src/integrate_feedback.py
     deps:
@@ -16,13 +16,9 @@ stages:
     deps:
       - src/train.py
       - data/processed/train/
-    # DVC sẽ theo dõi file model này, nếu mất nó sẽ bắt train lại
+
     outs:
       - models/OMR_Grading_Engine.pth
-    # (Tùy chọn) Theo dõi siêu tham số trong params.yaml để MLflow log lại
-    # params:
-    #   - train.epochs
-    #   - train.batch_size
 
   # Bước 3: Đánh giá mô hình (Phải tốt hơn thì mới lên sóng)
   evaluate:
@@ -31,7 +27,7 @@ stages:
       - src/evaluate.py
       - models/OMR_Grading_Engine.pth
       - data/processed/test/
-    # File metrics.json không được cache để luôn hiển thị kết quả mới nhất trên Git
+      
     metrics:
       - metrics.json:
           cache: false

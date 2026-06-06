@@ -3,39 +3,42 @@ version: "3.8"
 services:
   postgres:
     image: postgres:13
-    environment:
-      - POSTGRES_USER=mlflow_user
-      - POSTGRES_PASSWORD=mlflow_pass
-      - POSTGRES_DB=mlflow_db
+    env_file:
+      - .env
     ports:
       - "5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
+    restart: unless-stopped
 
   minio:
     image: minio/minio
     ports:
       - "9000:9000"
       - "9001:9001"
-    environment:
-      - MINIO_ROOT_USER=admin
-      - MINIO_ROOT_PASSWORD=password123
+    env_file:
+      - .env
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
-
+    restart: unless-stopped
+  
   mlflow:
     image: python:3.9-slim
     ports:
       - "5000:5000"
-    environment:
-      - AWS_ACCESS_KEY_ID=admin
-      - AWS_SECRET_ACCESS_KEY=password123
-      - MLFLOW_S3_ENDPOINT_URL=http://minio:9000
+    env_file:
+      - .env
     depends_on:
       - postgres
       - minio
-    command: bash -c "pip install mlflow psycopg2-binary boto3 && mlflow server --backend-store-uri postgresql://mlflow_user:mlflow_pass@postgres/mlflow_db --default-artifact-root s3://omr-models --host 0.0.0.0"
+    command: >
+      bash -c "pip install mlflow psycopg2-binary boto3 && 
+      mlflow server 
+      --backend-store-uri postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB} 
+      --default-artifact-root s3://omr-models 
+      --host 0.0.0.0"
+    restart: unless-stopped
 
   omr_api:
     build: .
@@ -45,10 +48,6 @@ services:
       - "8001:8000"
     env_file:
       - .env
-    environment:
-      
-      - MLFLOW_S3_ENDPOINT_URL=http://minio:9000
-      - MLFLOW_TRACKING_URI=http://mlflow:5000
     depends_on:
       - minio
       - mlflow
@@ -71,6 +70,9 @@ services:
       - omr_api
     volumes:
       - ./monitoring/demo_images:/app/demo_images
+    env_file:
+      - .env
+    restart: unless-stopped
 
   prometheus:
     image: prom/prometheus
@@ -79,19 +81,21 @@ services:
       - "9090:9090"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    restart: unless-stopped
 
   grafana:
     image: grafana/grafana
     container_name: omr_grafana
     ports:
       - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin123
+    env_file:
+      - .env
     volumes:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
       - grafana_data:/var/lib/grafana
     depends_on:
       - prometheus
+    restart: unless-stopped
 
   omr_api_demo:
     build: .
@@ -103,6 +107,9 @@ services:
       - .:/app
     depends_on:
       - omr_api
+    env_file:
+      - .env
+    restart: unless-stopped
   
   node-exporter:
     image: prom/node-exporter:latest
