@@ -12,8 +12,10 @@ RETRAIN_THRESHOLD = 10
 def send_discord_alert(message: str):
     try:
         requests.post(DISCORD_WEBHOOK_URL, json={"content": message}, timeout=3)
-    except:
-        pass
+    except requests.Timeout:
+        print(f"Discord timeout: {message}")
+    except Exception as e:
+        print(f"Discord error: {e}")
 
 def retrain_job():
     ready_samples = len(glob.glob(os.path.join(RETRAIN_DIR, "*_label.json")))

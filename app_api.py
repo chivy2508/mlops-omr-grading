@@ -5,6 +5,10 @@ import cv2
 import pandas as pd
 import numpy as np
 import torch
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 st.set_page_config(page_title="Demo OMR API", page_icon="⚡", layout="wide")
 
@@ -116,16 +120,23 @@ with col2:
             try:
                 files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
                 FASTAPI_URL = "http://omr_api:8000/predict" 
+                FASTAPI_URL = os.getenv("FASTAPI_PREDICT_URL", "http://omr_api:8000/predict")
                 
                 response = requests.post(FASTAPI_URL, files=files)
+                response = requests.post(FASTAPI_URL, files=files, timeout=15)
                 
                 if response.status_code == 200:
                     st.session_state.api_data = response.json()
                     st.success("🎉 API trả kết quả thành công!")
                 else:
                     st.error(f"API báo lỗi: Code {response.status_code}")
+            except requests.Timeout:
+                st.error("Thời gian kết nối đến API vượt quá giới hạn (Timeout).")
+            except requests.ConnectionError:
+                st.error("Không thể kết nối đến máy chủ API. Vui lòng kiểm tra xem API đã được bật chưa.")
             except Exception as e:
                 st.error(f"Không kết nối được với API: {e}")
+                st.error(f"Lỗi không xác định khi kết nối API: {e}")
                 
     elif uploaded_file is None:
         st.write("👈 *Hãy tải ảnh bài thi lên ở cột bên trái để xem kết quả tại đây.*")
@@ -159,6 +170,7 @@ with col2:
                         feedback_data = {"correct_labels": edited_df.to_json(orient="records")}
                         
                         FEEDBACK_URL = "http://omr_api:8000/feedback"
+                        FEEDBACK_URL = os.getenv("FASTAPI_FEEDBACK_URL", "http://omr_api:8000/feedback")
                         feedback_response = requests.post(FEEDBACK_URL, files=feedback_files, data=feedback_data)
                         
                         if feedback_response.status_code == 200:

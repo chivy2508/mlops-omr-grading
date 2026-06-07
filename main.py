@@ -10,6 +10,9 @@ import uuid
 from prometheus_client import make_asgi_app, Counter, Gauge
 import base64
 import asyncio
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ==========================================
 # 1. CẤU HÌNH MLFLOW & MINIO 
@@ -23,6 +26,8 @@ os.makedirs(RETRAIN_DIR, exist_ok=True)
 STATE_FILE = os.path.join(RETRAIN_DIR, "drift_state.json")
 
 MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
+if not MLFLOW_TRACKING_URI:
+    raise ValueError("MLFLOW_TRACKING_URI must be set")
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
 
@@ -359,7 +364,7 @@ async def predict_omr(file: UploadFile = File(...)):
             })
 
         # =========================================================
-        # MobileNet Nhị phân
+        # PIPELINE 2 (CLASSIFICATION): MobileNet Nhị phân
         # =========================================================
         # Chuyển list 160 ảnh thành Tensor có shape [160, 1, 32, 32]
         input_tensor = torch.tensor(np.array(patches)).unsqueeze(1) 
