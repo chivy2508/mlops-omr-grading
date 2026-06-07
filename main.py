@@ -279,90 +279,116 @@ async def predict_omr(file: UploadFile = File(...)):
         nparr = np.frombuffer(image_bytes, np.uint8)
         image = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
         
-        # 1. Cắt nắn khung giấy (Kiêm luôn bộ lọc rác)
+        # 1. Tiền xử lý (Cắt nắn khung giấy)
         is_clear, reason_clear = check_blur_and_brightness(image)
         if not is_clear:
             send_discord_alert(f"🚨 Từ chối `{file.filename}`: {reason_clear}")
             return {"trang_thai": "từ chối", "chi_tiet": reason_clear}
             
-        # --- CHỐT CHẶN 2: Có phải giấy thi không? ---
         aligned_img = get_aligned_paper(image, target_w=800, target_h=1200)
         if aligned_img is None:
             reason_paper = "Không tìm thấy tờ phiếu thi hợp lệ."
             send_discord_alert(f"🚨 Từ chối `{file.filename}`: {reason_paper}")
             return {"trang_thai": "từ chối", "chi_tiet": reason_paper}
             
-        # 2. Làm sạch nền
+        # 2. Làm sạch nền & Đảm bảo kích thước chuẩn để đo tọa độ
         final_processed_image = clean_and_binarize(aligned_img)
-        
-        # 3. Chuẩn bị tensor cho PyTorch
-        input_image = cv2.resize(final_processed_image, (800, 1200))
-        input_image = input_image.astype(np.float32) / 255.0
-        input_tensor = torch.tensor(input_image).unsqueeze(0).unsqueeze(0)
-        
-        # 4. Dự đoán
-        with torch.no_grad(): 
-            result_tensor = model(input_tensor)
-        
-        predictions = torch.argmax(result_tensor, dim=2)[0] 
-        label_map_reverse = {0: 'A', 1: 'B', 2: 'C', 3: 'D'}
-        final_answers = [label_map_reverse[ans.item()] for ans in predictions]
+        final_processed_image = cv2.resize(final_processed_image, (800, 1200))
 
-        #START_X, START_Y = get_dynamic_start(final_processed_image, default_x=141.0, default_y=343.0)
-
-        START_X = 135.0  # Chỉnh số này cho đến khi cột 1 khớp (Tăng -> Dịch phải, Giảm -> Dịch trái)
-        START_Y = 665.0
-
-        X_STRIDE = 30.5 # Khoảng cách giữa A, B, C, D
-        Y_STRIDE = 35  # Khoảng cách giữa Câu 1, Câu 2... dọc xuống
-        COL_STRIDE = 150 # Khoảng cách sang cột mới
-        BLOCK_GAP = 0    # Khoảng trống giữa các block (nếu có)
+        with open("data/template_config.json", "r") as f:
+            template_config = json.load(f)
+            
+        patches = []
+        coords_info = []
         
-        predictions_detail = []
-        for i, ans in enumerate(final_answers):
-            cau_hoi = i + 1
-            q = i  # q chạy từ 0 đến 39 (chuẩn array index)
+        for bubble in template_config["bubbles"]:
+            center_x = bubble["x"]
+            center_y = bubble["y"]
+            half_w = bubble["w"] // 2
+            half_h = bubble["h"] // 2
             
-            # Ánh xạ chữ sang số: A=0, B=1, C=2, D=3
-            offset_x_map = {'A': 0, 'B': 1, 'C': 2, 'D': 3}
-            ans_idx = offset_x_map.get(ans, 0)
+            # Tính Bounding Box
+            x1, y1 = center_x - half_w, center_y - half_h
+            x2, y2 = center_x + half_w, center_y + half_h
             
-            # Logic chia cột và dòng y hệt code cũ của bạn
-            col_index = q // 10  
-            row_index = q % 10   
+            # Cắt ảnh
+            patch = final_processed_image[y1:y2, x1:x2]
             
-            # Tính tọa độ bằng float
-            center_x = START_X + (ans_idx * X_STRIDE) + (col_index * COL_STRIDE)
-            center_y = START_Y + (row_index * Y_STRIDE)
-            
-            # Bù trừ đường kẻ ngang
-            if row_index >= 5:
-                center_y += BLOCK_GAP
+            # Rủi ro an toàn: Đảm bảo patch luôn là 32x32
+            if patch.shape != (32, 32):
+                patch = cv2.resize(patch, (32, 32))
                 
-            # Đóng gói JSON trả về Streamlit
-            predictions_detail.append({
-                "cau": cau_hoi,
-                "dap_an": ans,
+            patch = patch.astype(np.float32) / 255.0
+            patches.append(patch)
+            
+            coords_info.append({
+                "cau": bubble["question"],
+                "char": bubble["option"],
                 "x": center_x,
                 "y": center_y
             })
 
+        # =========================================================
+        # PIPELINE 2 (CLASSIFICATION): MobileNet Nhị phân
+        # =========================================================
+        # Chuyển list 160 ảnh thành Tensor có shape [160, 1, 32, 32]
+        input_tensor = torch.tensor(np.array(patches)).unsqueeze(1) 
+        
+        with torch.no_grad(): 
+            # Model trả ra shape [160, 2] (Xác suất cho class 0 và class 1)
+            outputs = model(input_tensor)
+            
+            # Lấy xác suất của class 1 (Ô đã bị tô đen) dùng hàm Softmax
+            probs = torch.softmax(outputs, dim=1)[:, 1]
+
+        # =========================================================
+        # TỔNG HỢP KẾT QUẢ VÀ TÌM ĐÁP ÁN ĐÚNG
+        # =========================================================
+        final_answers = []
+        predictions_detail = []
+        
+        for q in range(40):
+            # Lấy 4 mức độ tự tin (Confidence) của 4 đáp án A, B, C, D trong câu q
+            q_probs = probs[q*4 : (q+1)*4]
+            
+            # Chọn ô có điểm "tô đen" cao nhất
+            best_ans_idx = torch.argmax(q_probs).item()
+            best_prob = q_probs[best_ans_idx].item()
+            
+            # Thiết lập ngưỡng: Nếu không ô nào đạt độ đen > 0.5 thì coi như bỏ trống (N)
+            if best_prob > 0.5:
+                chosen_char = ['A', 'B', 'C', 'D'][best_ans_idx]
+            else:
+                chosen_char = 'N' 
+                
+            final_answers.append(chosen_char)
+            
+            # Cấu trúc JSON trả về Streamlit
+            chosen_coord = coords_info[q*4 + best_ans_idx]
+            predictions_detail.append({
+                "cau": q + 1,
+                "dap_an": chosen_char,
+                "x": chosen_coord["x"],
+                "y": chosen_coord["y"],
+                "confidence": float(best_prob)
+            })
+
+        # --- Ghi nhận Metrics ---
         SUCCESS_REQUESTS.inc()
         global total_predictions
         
-        # Sửa chữ answers thành final_answers
-        for ans in final_answers: 
-            if ans in ANSWER_COUNTERS:
-                ANSWER_COUNTERS[ans].inc()
-                answer_counts[ans] += 1
-                total_predictions += 1
+        # Chỉ đếm số liệu cho đáp án A, B, C, D hợp lệ (bỏ qua N)
+        valid_answers = [ans for ans in final_answers if ans in ANSWER_COUNTERS]
+        for ans in valid_answers: 
+            ANSWER_COUNTERS[ans].inc()
+            answer_counts[ans] += 1
+            total_predictions += 1
                 
-        current_drift = update_drift_score(final_answers)
+        current_drift = update_drift_score(valid_answers)
         
         _, buffer = cv2.imencode('.jpg', aligned_img)
         aligned_base64 = base64.b64encode(buffer).decode('utf-8')
 
-        # Sửa chữ answers thành final_answers
         return {
             "trang_thai": "thành công", 
             "predictions": predictions_detail,

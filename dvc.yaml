@@ -1,5 +1,4 @@
 stages:
-  stages:
   # Bước 1: Trộn ảnh cũ + ảnh mới khách hàng vừa sửa
   split_dataset:
     cmd: python src/integrate_feedback.py
@@ -14,8 +13,8 @@ stages:
     cmd: python src/crop_bubbles.py
     deps:
       - src/crop_bubbles.py
-      - data/processed/  # Chờ file CSV từ Bước 1
-      - data/synthetic_images/ # Ảnh gốc để cắt
+      - data/synthetic_images/
+      - data/processed/
     outs:
       - data/bubbles/
 
