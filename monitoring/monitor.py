@@ -2,10 +2,7 @@ import time
 import requests
 import os
 import random
-import subprocess
-import glob
 
-# === CẤU HÌNH ===
 RETRAIN_THRESHOLD = 10
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
 API_URL = "http://omr_api:8000/predict"
@@ -24,7 +21,7 @@ def send_discord(message, color=16711680):
 
 def check_api_health():
     try:
-        r = requests.get("http://omr_engine:8000/docs", timeout=5)
+        r = requests.get("http://omr_api:8000/docs", timeout=5)
         return True if r.status_code == 200 else False
     except:
         return False
@@ -53,21 +50,15 @@ if __name__ == '__main__':
     while True:
         current_health = check_api_health()
         
-        # 1. LOGIC BÁO ĐỘNG SỐNG/CHẾT (Chỉ báo khi trạng thái thay đổi)
         if current_health != previous_health_status:
             if current_health == True:
-                # API từ trạng thái Chết -> Sống lại
                 send_discord("🟩 **HỆ THỐNG PHỤC HỒI:** API OMR đã hoạt động trở lại! Mọi thứ đang chạy bình thường.", color=65280)
             else:
-                # API từ trạng thái Sống -> Lăn ra chết
                 send_discord("🚨 **CẢNH BÁO MẤT KẾT NỐI:** API OMR vừa bị sập hoặc không phản hồi! Vui lòng kiểm tra Docker ngay lập tức.", color=16711680)
             
-            # Cập nhật lại bộ nhớ của Bot
             previous_health_status = current_health
 
-        # 2. LOGIC ĐI TUẦN TRA & GIẢ LẬP
         if current_health:
-            # Bắn data giả khi API đang sống
             simulate_traffic()
         else:
             print("[WARN] API đang sập, tạm dừng các hoạt động tuần tra...", flush=True)

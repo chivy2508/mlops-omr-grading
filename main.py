@@ -11,12 +11,9 @@ from prometheus_client import make_asgi_app, Counter, Gauge, Histogram
 import base64
 import asyncio
 from dotenv import load_dotenv
+from src.align_document import get_aligned_paper
 
 load_dotenv()
-
-# ==========================================
-# 1. CẤU HÌNH MLFLOW & MINIO 
-# ==========================================
 
 
 
@@ -54,12 +51,7 @@ DRIFT_SCORE = Gauge('omr_drift_score', 'Data drift score')
 INFERENCE_TIME = Histogram('omr_inference_seconds', 'Model inference time')
 
 ANSWER_COUNTERS = {'A': ANSWER_A, 'B': ANSWER_B, 'C': ANSWER_C, 'D': ANSWER_D}
-REFERENCE_DIST = {'A': 0.25, 'B': 0.25, 'C': 0.25, 'D': 0.25}
-answer_counts = {'A': 0, 'B': 0, 'C': 0, 'D': 0}
-total_predictions = 0
 
-
-# --- QUẢN LÝ TRẠNG THÁI DRIFT ---
 REFERENCE_DIST = {'A': 0.25, 'B': 0.25, 'C': 0.25, 'D': 0.25}
 
 def load_drift_state():
@@ -70,7 +62,7 @@ def load_drift_state():
                 return json.load(f)
         except Exception:
             pass
-    # Mặc định nếu chưa có file
+
     return {"total_predictions": 0, "answer_counts": {"A": 0, "B": 0, "C": 0, "D": 0}}
 
 def save_drift_state(state):
@@ -78,25 +70,21 @@ def save_drift_state(state):
     with open(STATE_FILE, "w") as f:
         json.dump(state, f)
 
-# Khởi tạo state toàn cục
 drift_state = load_drift_state()
 
 def update_drift_score(final_answers):
     """Hàm tự động tính toán lại độ lệch và ghi xuống đĩa"""
     
     
-    # 1. Cập nhật số liệu mới
     for ans in final_answers:
         if ans in drift_state["answer_counts"]:
             drift_state["answer_counts"][ans] += 1
             drift_state["total_predictions"] += 1
-            # Cập nhật luôn metrics cho Prometheus
+           
             ANSWER_COUNTERS[ans].inc()
             
-    # 2. Lưu ngay xuống file JSON bảo toàn tính mạng
     save_drift_state(drift_state)
     
-    # 3. Tính toán độ lệch
     total = drift_state["total_predictions"]
     if total == 0:
         return 0.0
@@ -136,7 +124,6 @@ async def watch_mlflow_registry():
     client = mlflow.tracking.MlflowClient()
     while True:
         try:
-            # Chuyển tác vụ chặn (blocking) sang ThreadPool để không làm treo API chính
             prod_versions = await asyncio.to_thread(client.get_latest_versions, "OMR_Grading_Engine", stages=["Production"])
             if prod_versions:
                 latest_prod_version = prod_versions[0].version
@@ -149,11 +136,10 @@ async def watch_mlflow_registry():
                     print(f"✅ Đã cập nhật mô hình lên phiên bản v{latest_prod_version} thành công!")
         except Exception:
             pass
-        await asyncio.sleep(300) # Nghỉ 5 phút rồi kiểm tra lại
+        await asyncio.sleep(300) 
 
 @app.on_event("startup")
 async def startup_event():
-    # Kích hoạt luồng chạy ngầm ngay khi API khởi động
     asyncio.create_task(watch_mlflow_registry())
 
 def check_blur_and_brightness(image_gray: np.ndarray):
@@ -169,47 +155,6 @@ def check_blur_and_brightness(image_gray: np.ndarray):
     return True, "OK"
 
 
-
-def get_aligned_paper(image: np.ndarray, target_w: int = 800, target_h: int = 1200):
-    orig_h, orig_w = image.shape[:2]
-    total_area = orig_h * orig_w
-    
-    blur = cv2.GaussianBlur(image, (5, 5), 0)
-    edged = cv2.Canny(blur, 75, 200)
-    
-    cnts, _ = cv2.findContours(edged.copy(), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-    
-    paper_contour = None
-    if cnts:
-        cnts = sorted(cnts, key=cv2.contourArea, reverse=True)[:10]
-        for c in cnts:
-            peri = cv2.arcLength(c, True)
-            approx = cv2.approxPolyDP(c, 0.02 * peri, True)
-            
-            if len(approx) == 4:
-                area = cv2.contourArea(approx)
-                if area > 0.3 * total_area:
-                    paper_contour = approx
-                    break
-                    
-    if paper_contour is None:
-        return cv2.resize(image, (target_w, target_h))
-        
-    rect = np.zeros((4, 2), dtype="float32")
-    pts = paper_contour.reshape(4, 2)
-    s = pts.sum(axis=1)
-    diff = np.diff(pts, axis=1)
-    rect[0] = pts[np.argmin(s)]      
-    rect[2] = pts[np.argmax(s)]       
-    rect[1] = pts[np.argmin(diff)]    
-    rect[3] = pts[np.argmax(diff)]    
-    dst = np.array([[0, 0], [target_w - 1, 0], [target_w - 1, target_h - 1], [0, target_h - 1]], dtype="float32")
-    M = cv2.getPerspectiveTransform(rect, dst)
-    aligned = cv2.warpPerspective(image, M, (target_w, target_h))
-    return aligned
-
-
-
 def clean_and_binarize(aligned_image: np.ndarray) -> np.ndarray:
     blur = cv2.GaussianBlur(aligned_image, (3, 3), 0)
     cleaned = cv2.adaptiveThreshold(
@@ -217,42 +162,6 @@ def clean_and_binarize(aligned_image: np.ndarray) -> np.ndarray:
         cv2.THRESH_BINARY, 11, 2
     )
     return cleaned
-
-def get_dynamic_start(binary_image: np.ndarray, default_x=141.0, default_y=343.0):
-    """
-    Tìm ô vuông đen (Anchor) ở gần Câu 1 để xác định lại START_X và START_Y
-    """
-    inv = cv2.bitwise_not(binary_image)
-    
-    h, w = inv.shape
-    roi = inv[0:int(h/2), 0:int(w/2)]
-    
-    cnts, _ = cv2.findContours(roi, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
-    for c in cnts:
-        x, y, w_box, h_box = cv2.boundingRect(c)
-        aspect_ratio = w_box / float(h_box)
-        area = cv2.contourArea(c)
-        
-        # Điều kiện nhận dạng "Ô vuông đen":
-        # 1. Tỷ lệ dài/rộng xấp xỉ 1.0 (Hình vuông)
-        # 2. Diện tích đủ lớn (không phải hạt bụi) nhưng không quá to (không phải cả cái bảng)
-        if 0.8 <= aspect_ratio <= 1.2 and 150 < area < 900:
-            
-            # KHOẢNG CÁCH TỪ Ô VUÔNG ĐẾN TÂM ĐÁP ÁN A (BẠN CẦN ĐO LẠI 1 LẦN DUY NHẤT)
-            # Ví dụ: Từ mép trái ô vuông dịch sang phải 40px là tâm đáp án A
-            OFFSET_X = 40.0 
-            # Ví dụ: Tâm đáp án A nằm ngang hàng với mép trên ô vuông
-            OFFSET_Y = 0.0  
-            
-            dynamic_start_x = float(x + OFFSET_X)
-            dynamic_start_y = float(y + OFFSET_Y)
-            
-            return dynamic_start_x, dynamic_start_y
-            
-    # Nếu xui xẻo giấy bị rách/mất ô vuông đen, trả về tọa độ cứng dự phòng để API không sập
-    return default_x, default_y
-
 
 @app.post("/feedback")
 async def save_human_feedback(
@@ -269,11 +178,9 @@ async def save_human_feedback(
         with open(image_path, "wb") as buffer:
             buffer.write(await file.read())
             
-        # 2. Lưu đáp án chuẩn (Ground Truth) ra file JSON
         label_filename = f"{unique_id}_label.json"
         label_path = os.path.join(RETRAIN_DIR, label_filename)
         
-        # Chuyển chuỗi JSON từ Streamlit gửi lên thành dạng dictionary
         labels_data = json.loads(correct_labels) 
         
         with open(label_path, "w", encoding="utf-8") as f:
@@ -291,7 +198,6 @@ async def reload_model():
     global model
     try:
         print("Đang kéo mô hình Production mới nhất về...")
-        # Kéo model mới đè lên biến model cũ
         model = mlflow.pytorch.load_model("models:/OMR_Grading_Engine@production")
         model.eval()
         return {"status": "thành công", "message": "Đã cập nhật model Production mới nhất lên RAM!"}
@@ -303,11 +209,9 @@ async def predict_omr(file: UploadFile = File(...)):
     if model is None:
         return {"trang_thai": "lỗi", "chi_tiet": "Mô hình chưa được nạp, vui lòng kiểm tra server"}
 
-    # Validate file size (Giới hạn 10MB)
     if file.size is not None and file.size > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File quá lớn (Tối đa 10MB)")
     
-    # Validate file format
     if file.content_type not in ["image/jpeg", "image/png"]:
         raise HTTPException(status_code=400, detail="Chỉ chấp nhận định dạng JPG/PNG")
         
@@ -316,7 +220,6 @@ async def predict_omr(file: UploadFile = File(...)):
         nparr = np.frombuffer(image_bytes, np.uint8)
         image = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
         
-        # 1. Tiền xử lý (Cắt nắn khung giấy)
         is_clear, reason_clear = check_blur_and_brightness(image)
         if not is_clear:
             send_discord_alert(f"🚨 Từ chối `{file.filename}`: {reason_clear}")
@@ -328,9 +231,7 @@ async def predict_omr(file: UploadFile = File(...)):
             send_discord_alert(f"🚨 Từ chối `{file.filename}`: {reason_paper}")
             return {"trang_thai": "từ chối", "chi_tiet": reason_paper}
             
-        # 2. Làm sạch nền & Đảm bảo kích thước chuẩn để đo tọa độ
         final_processed_image = clean_and_binarize(aligned_img)
-        final_processed_image = cv2.resize(final_processed_image, (800, 1200))
 
         if TEMPLATE_CONFIG is None:
             return {"trang_thai": "lỗi", "chi_tiet": "Server thiếu file template_config.json"}
@@ -344,14 +245,11 @@ async def predict_omr(file: UploadFile = File(...)):
             half_w = bubble["w"] // 2
             half_h = bubble["h"] // 2
             
-            # Tính Bounding Box
             x1, y1 = center_x - half_w, center_y - half_h
             x2, y2 = center_x + half_w, center_y + half_h
             
-            # Cắt ảnh
             patch = final_processed_image[y1:y2, x1:x2]
             
-            # Rủi ro an toàn: Đảm bảo patch luôn là 32x32
             if patch.shape != (32, 32):
                 patch = cv2.resize(patch, (32, 32))
                 
@@ -397,14 +295,11 @@ async def predict_omr(file: UploadFile = File(...)):
                 "confidence": float(best_prob)
             })
 
+        # --- Ghi nhận Metrics ---
         SUCCESS_REQUESTS.inc()
-        global total_predictions
         
+        # Chỉ đếm số liệu cho đáp án A, B, C, D hợp lệ (bỏ qua N)
         valid_answers = [ans for ans in final_answers if ans in ANSWER_COUNTERS]
-        for ans in valid_answers: 
-            ANSWER_COUNTERS[ans].inc()
-            answer_counts[ans] += 1
-            total_predictions += 1
                 
         current_drift = update_drift_score(valid_answers)
         

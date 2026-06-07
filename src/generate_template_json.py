@@ -2,17 +2,18 @@ import json
 import os
 
 def generate_bubble_coordinates(output_json_path="data/template_config.json"):
-    # BỘ SỐ CHUẨN ĐƯỢC ĐO TRÊN ẢNH 800x1200
-    START_X = 135.0  
-    START_Y = 665.0
+    
+    START_X = 141.0  
+    START_Y = 343.0
     X_STRIDE = 30.5 
-    Y_STRIDE = 35  
-    COL_STRIDE = 150 
+    Y_STRIDE = 23.7  
+    COL_STRIDE = 179 
     BLOCK_GAP = 0    
+    NUM_QUESTIONS = 40
     
     bubbles = []
     
-    for q in range(40):
+    for q in range(NUM_QUESTIONS):
         col_index = q // 10  
         row_index = q % 10   
         
@@ -21,6 +22,7 @@ def generate_bubble_coordinates(output_json_path="data/template_config.json"):
             center_y += BLOCK_GAP
             
         for ans_idx, ans_char in enumerate(['A', 'B', 'C', 'D']):
+            # Tính tọa độ TÂM y hệt như lúc vẽ
             center_x = START_X + (ans_idx * X_STRIDE) + (col_index * COL_STRIDE)
             
             # Lưu tọa độ TÂM và Kích thước Box (32x32)
@@ -33,7 +35,6 @@ def generate_bubble_coordinates(output_json_path="data/template_config.json"):
                 "h": 32
             })
             
-    # Đảm bảo thư mục tồn tại
     os.makedirs(os.path.dirname(output_json_path), exist_ok=True)
     
     with open(output_json_path, 'w', encoding='utf-8') as f:

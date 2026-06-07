@@ -4,7 +4,6 @@ import mlflow
 import torch
 import torch.nn as nn
 import torchvision.models as models
-import torch.nn as nn
 from torch.utils.data import DataLoader
 import numpy as np
 import random
@@ -24,7 +23,6 @@ def seed_everything(seed=42):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    # Tắt tính năng tối ưu non-deterministic của cuDNN
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
@@ -55,15 +53,13 @@ class MobileNetBubble(nn.Module):
             stride=original_conv.stride, padding=original_conv.padding, bias=False
         )
         
-        # --- LỚP PHÒNG NGỰ 2: ĐÓNG BĂNG BACKBONE ---
         for param in self.backbone.features.parameters():
-            param.requires_grad = False  # KHÔNG cập nhật trọng số phần này
+            param.requires_grad = False  
         
-        # --- LỚP PHÒNG NGỰ 3: DROPOUT MẠNH TAY ---
         in_features = self.backbone.classifier[1].in_features
         self.backbone.classifier = nn.Sequential(
             nn.Dropout(p=dropout_rate), 
-            nn.Linear(in_features, 2) # Output 2 class: 0 (Trống) và 1 (Đã tô)
+            nn.Linear(in_features, 2) 
         )
 
     def forward(self, x):
@@ -112,26 +108,22 @@ if __name__ == "__main__":
         val_data   = datasets.ImageFolder(root='data/bubbles/val', transform=val_transform)
         test_data   = datasets.ImageFolder(root='data/bubbles/test', transform=val_transform)
 
-        # Sử dụng num_workers để load dữ liệu đa luồng, giúp giảm thời gian Train trên CPU
         num_workers = config['model'].get('num_workers', 4)
 
         train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=num_workers)
         val_loader   = DataLoader(val_data, batch_size=batch_size, shuffle=False, num_workers=num_workers)
         test_loader  = DataLoader(test_data, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
-        # 2. Bạn có thể lấy luôn learning rate và patience từ config cho xịn!
         lr = config['model'].get('learning_rate', 0.001)
         patience = config['model'].get('patience', 2)
-        weight_decay = config['model'].get('weight_decay', 1e-5) # Giảm weight decay so với 1e-4 cũ
+        weight_decay = config['model'].get('weight_decay', 1e-5) 
         dropout_rate = config['model'].get('dropout', 0.2)
         class_weight_0 = config['model'].get('class_weight_0', 1.0)
         class_weight_1 = config['model'].get('class_weight_1', 3.0)
 
-        # Khởi tạo thiết bị (GPU nếu có, không thì CPU)
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = MobileNetBubble(dropout_rate=dropout_rate).to(device)
 
-        # --- LOGGING SIÊU THAM SỐ VÀO MLFLOW ---
         mlflow.log_param("batch_size", batch_size)
         mlflow.log_param("epochs", epochs)
         mlflow.log_param("learning_rate", lr)
@@ -141,7 +133,7 @@ if __name__ == "__main__":
         mlflow.log_param("class_weight_0", class_weight_0)
         mlflow.log_param("class_weight_1", class_weight_1)
         mlflow.log_param("num_workers", num_workers)
-        mlflow.log_param("git_commit", get_git_hash()) # Bắt luôn mã Hash Git để map với dvc.lock!
+        mlflow.log_param("git_commit", get_git_hash()) 
 
         optimizer = torch.optim.Adam(
             filter(lambda p: p.requires_grad, model.parameters()), 
@@ -149,12 +141,9 @@ if __name__ == "__main__":
             weight_decay=weight_decay  
         )
 
-        # Áp dụng Class Weights (Phạt nặng nếu đoán sai ô có mực tô)
-        # Ô trống (0) chiếm 3/4, Ô có tô (1) chiếm 1/4 -> Phạt Class 1 gấp 3 lần Class 0
         class_weights = torch.tensor([class_weight_0, class_weight_1], dtype=torch.float).to(device)
         criterion = nn.CrossEntropyLoss(weight=class_weights)
         
-        # 3. Xóa dòng `epochs = 10` đi! Dùng biến epochs đã lấy từ YAML ở đầu file
         best_val_loss = float('inf')
         trigger_times = 0
 
@@ -201,4 +190,4 @@ if __name__ == "__main__":
         else:
             print("⚠️ Điểm Test quá thấp, từ chối lưu model vào Registry.") 
             import sys
-            sys.exit(1) # Bắt buộc dừng pipeline DVC tại đây để chặn bước Evaluate!
+            sys.exit(1) 

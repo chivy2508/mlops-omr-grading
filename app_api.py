@@ -1,10 +1,7 @@
 import streamlit as st
 import requests
 import base64
-import cv2
 import pandas as pd
-import numpy as np
-import torch
 import os
 from dotenv import load_dotenv
 
@@ -95,7 +92,6 @@ st.markdown(f"""
 
 col1, col2 = st.columns(2, gap="large")
 
-# ================= CỘT TRÁI: NHẬP LIỆU =================
 with col1:
     st.subheader("📤 1. Tải ảnh & Gửi")
     uploaded_file = st.file_uploader("Tải ảnh bài thi lên đây (JPG, JPEG, PNG)...", type=["jpg", "jpeg", "png"])
@@ -108,7 +104,6 @@ with col1:
     else:
         submit_button = False
 
-# ================= CỘT PHẢI: KẾT QUẢ =================
 with col2:
     st.subheader("📥 2. Kết quả chấm & Phản hồi")
     
@@ -163,8 +158,6 @@ with col2:
             if submit_feedback:
                 with st.spinner("Đang lưu dữ liệu chuẩn..."):
                     try:
-                        # BƯỚC ĐỘT PHÁ: Lưu lại ảnh đã căn chỉnh (aligned) thay vì ảnh gốc (raw).
-                        # Đảm bảo Data Retrain luôn vuông vắn 800x1200 và cắt tọa độ chính xác!
                         aligned_b64 = data.get("aligned_image", "")
                         if aligned_b64:
                             img_bytes = base64.b64decode(aligned_b64)

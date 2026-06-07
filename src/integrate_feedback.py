@@ -5,14 +5,14 @@ import shutil
 import pandas as pd
 import subprocess
 import fcntl
+from filelock import FileLock
 
 # --- CẤU HÌNH ĐƯỜNG DẪN ---
 RETRAIN_DIR = "./retrain_dataset"
 TARGET_IMG_DIR = "data/synthetic_images"
-TARGET_CSV = "data/labels.csv"
+TARGET_CSV = "data/feedback_labels.csv"
 
 def process_and_trigger_pipeline():
-    # Lấy danh sách các file JSON đáp án từ Streamlit gửi về
     json_files = glob.glob(os.path.join(RETRAIN_DIR, "*_label.json"))
     
     if not json_files:
@@ -24,10 +24,8 @@ def process_and_trigger_pipeline():
     print(f"🔄 Đang xử lý {len(json_files)} mẫu dữ liệu mới từ khách hàng...")
     
     for json_path in json_files:
-        # Lấy cái ID ngẫu nhiên (VD: a1b2c3d4)
         base_name = os.path.basename(json_path).replace("_label.json", "")
         
-        # Tìm ảnh đi kèm (Dùng glob để quét đuôi jpg, png, jpeg...)
         img_files = glob.glob(os.path.join(RETRAIN_DIR, f"{base_name}_image.*"))
         if not img_files:
             continue
@@ -35,11 +33,9 @@ def process_and_trigger_pipeline():
         img_src = img_files[0]
         img_filename = os.path.basename(img_src)
         
-        # Đọc dữ liệu JSON: [{"cau": 1, "dap_an": "A"}, {"cau": 2, "dap_an": "B"}...]
         with open(json_path, 'r', encoding='utf-8') as f:
             feedback_data = json.load(f)
             
-        # Lắp ráp thành 1 dòng (row) chuẩn với file CSV gốc
         row_data = {"filename": img_filename}
         for item in feedback_data:
             row_data[f"Q{item['cau']}"] = item['dap_an']
@@ -53,37 +49,46 @@ def process_and_trigger_pipeline():
         os.remove(json_path)
 
     if new_rows:
-        # 1. Chuyển thành DataFrame và Nối vào cuối file labels.csv
         df_new = pd.DataFrame(new_rows)
-        # Đảm bảo thứ tự cột chuẩn xác (filename, Q1 -> Q40)
         cols = ['filename'] + [f'Q{i}' for i in range(1, 41)]
         df_new = df_new.reindex(columns=cols) 
         
-        with open(TARGET_CSV, 'a', newline='', encoding='utf-8') as f:
-            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-            try:
-                df_new.to_csv(f, header=False, index=False)
-            finally:
-                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        lock = FileLock(f"{TARGET_CSV}.lock")
+        
+        with lock:
+            df_new.to_csv(TARGET_CSV, mode='a', header=False, index=False)
 
         print(f"✅ Đã ghi thêm {len(new_rows)} dòng vào {TARGET_CSV}")
         
-        # 2. BÓP CÒ DVC & GIT TỰ ĐỘNG
         print("🚀 Bắt đầu chạy DVC Pipeline...")
         try:
-            # Theo dõi các ảnh mới
             subprocess.run(["dvc", "add", "data/synthetic_images/"], check=True)
             
-            # Phép thuật nằm ở đây: dvc repro sẽ tự thấy labels.csv đổi và chạy lại split_data.py
             subprocess.run(["dvc", "repro"], check=True)
             
-            # Đẩy lên MinIO
             subprocess.run(["dvc", "push"], check=True)
             
-            # Commit lên Git để lưu vết thay đổi file .dvc và .lock
-            subprocess.run(["git", "add", "data/synthetic_images.dvc", "data/labels.csv", "dvc.lock"], check=True)
-            subprocess.run(["git", "commit", "-m", "🔄 Auto-update: Bổ sung dữ liệu Ground Truth từ khách hàng"], check=True)
+            subprocess.run(["git", "config", "--global", "user.name", "OMR_Auto_Worker"], check=True)
+            subprocess.run(["git", "config", "--global", "user.email", "worker@omr.local"], check=True)
             
+            subprocess.run(["git", "add", "data/synthetic_images.dvc", "data/feedback_labels.csv", "dvc.lock"], check=True)
+            
+            status = subprocess.run(["git", "diff", "--cached", "--quiet"])
+            if status.returncode != 0:
+                subprocess.run(["git", "commit", "-m", f"🔄 Auto-update: Bổ sung {len(new_rows)} mẫu Ground Truth"], check=True)
+                
+                git_token = os.getenv("GIT_TOKEN")
+                git_repo = os.getenv("GIT_REPO_URL") 
+                
+                if git_token and git_repo:
+                    auth_url = f"https://{git_token}@{git_repo}"
+                    subprocess.run(["git", "push", auth_url, "main"], check=True)
+                    print("📦 Đã đẩy dvc.lock và code mới lên kho chứa an toàn!")
+                else:
+                    print("⚠️ Bỏ qua git push: Chưa cấu hình GIT_TOKEN hoặc GIT_REPO_URL.")
+            else:
+                print("ℹ️ Không có sự thay đổi nào về model/data để commit.")
+
             print("🎉 MLOps Pipeline hoàn tất! Dữ liệu đã sẵn sàng trên MinIO.")
             return True
             

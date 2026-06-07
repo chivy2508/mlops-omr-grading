@@ -4,6 +4,4 @@
     remote = myremote
 ['remote "myremote"']
     url = s3://omr-data
-    endpointurl = http://localhost:9000
-    access_key_id = admin
-    secret_access_key = password123
+    endpointurl = http://minio:9000

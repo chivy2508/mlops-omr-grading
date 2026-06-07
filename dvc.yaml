@@ -1,10 +1,18 @@
 stages:
-  # Bước 1: Trộn ảnh cũ + ảnh mới khách hàng vừa sửa
+  generate_template:
+    cmd: python src/generate_template_json.py
+    deps:
+      - src/generate_template_json.py
+    outs:
+      - data/template_config.json
+
   split_data:
     cmd: python src/split_data.py
     deps:
       - src/split_data.py
-      - data/labels.csv 
+      - data/labels.csv
+      - data/feedback_labels.csv
+      - data/synthetic_images/
     outs:
       - data/processed/train.csv
       - data/processed/val.csv
@@ -14,6 +22,7 @@ stages:
     cmd: python src/crop_bubbles.py
     deps:
       - src/crop_bubbles.py
+      - data/template_config.json
       - data/synthetic_images/
       - data/processed/
     outs:
