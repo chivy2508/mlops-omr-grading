@@ -1,9 +1,13 @@
 model:
-  epochs: 20
-  patience: 5
-  batch_size: 128
-  learning_rate: 0.001
-  dropout_rate: 0.5
+  batch_size: 256           
+  epochs: 20               
+  learning_rate: 0.001     
+  patience: 3              
+  weight_decay: 0.00001    
+  dropout: 0.2             
+  class_weight_0: 1.0     
+  class_weight_1: 3.0      
+  num_workers: 4           
 
 preprocessing:
   image_size: 32

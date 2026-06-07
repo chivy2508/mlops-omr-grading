@@ -44,7 +44,7 @@ def get_git_hash():
         return "unknown"
 
 class MobileNetBubble(nn.Module):
-    def __init__(self):
+    def __init__(self, dropout_rate=0.2):
         super(MobileNetBubble, self).__init__()
         self.backbone = models.mobilenet_v2(weights=models.MobileNet_V2_Weights.DEFAULT)
         
@@ -62,7 +62,7 @@ class MobileNetBubble(nn.Module):
         # --- LỚP PHÒNG NGỰ 3: DROPOUT MẠNH TAY ---
         in_features = self.backbone.classifier[1].in_features
         self.backbone.classifier = nn.Sequential(
-            nn.Dropout(p=0.5), # Tắt ngẫu nhiên 50% nơ-ron để chống học vẹt
+            nn.Dropout(p=dropout_rate), 
             nn.Linear(in_features, 2) # Output 2 class: 0 (Trống) và 1 (Đã tô)
         )
 
@@ -72,12 +72,14 @@ class MobileNetBubble(nn.Module):
 
 
 def evaluate_model(model, dataloader, criterion):
+    device = next(model.parameters()).device
     model.eval()
     total_loss = 0.0
     correct_answers = 0
     total_answers = 0
     with torch.no_grad(): 
         for images, labels in dataloader:
+            images, labels = images.to(device), labels.to(device)
             outputs = model(images)
             loss = criterion(outputs, labels)
             total_loss += loss.item()
@@ -110,23 +112,47 @@ if __name__ == "__main__":
         val_data   = datasets.ImageFolder(root='data/bubbles/val', transform=val_transform)
         test_data   = datasets.ImageFolder(root='data/bubbles/test', transform=val_transform)
 
-        train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
-        val_loader   = DataLoader(val_data, batch_size=batch_size, shuffle=False)
-        test_loader  = DataLoader(test_data, batch_size=batch_size, shuffle=False)
+        # Sử dụng num_workers để load dữ liệu đa luồng, giúp giảm thời gian Train trên CPU
+        num_workers = config['model'].get('num_workers', 4)
 
-        model = MobileNetBubble()
+        train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+        val_loader   = DataLoader(val_data, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+        test_loader  = DataLoader(test_data, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
         # 2. Bạn có thể lấy luôn learning rate và patience từ config cho xịn!
         lr = config['model'].get('learning_rate', 0.001)
         patience = config['model'].get('patience', 2)
+        weight_decay = config['model'].get('weight_decay', 1e-5) # Giảm weight decay so với 1e-4 cũ
+        dropout_rate = config['model'].get('dropout', 0.2)
+        class_weight_0 = config['model'].get('class_weight_0', 1.0)
+        class_weight_1 = config['model'].get('class_weight_1', 3.0)
+
+        # Khởi tạo thiết bị (GPU nếu có, không thì CPU)
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = MobileNetBubble(dropout_rate=dropout_rate).to(device)
+
+        # --- LOGGING SIÊU THAM SỐ VÀO MLFLOW ---
+        mlflow.log_param("batch_size", batch_size)
+        mlflow.log_param("epochs", epochs)
+        mlflow.log_param("learning_rate", lr)
+        mlflow.log_param("patience", patience)
+        mlflow.log_param("weight_decay", weight_decay)
+        mlflow.log_param("dropout", dropout_rate)
+        mlflow.log_param("class_weight_0", class_weight_0)
+        mlflow.log_param("class_weight_1", class_weight_1)
+        mlflow.log_param("num_workers", num_workers)
+        mlflow.log_param("git_commit", get_git_hash()) # Bắt luôn mã Hash Git để map với dvc.lock!
 
         optimizer = torch.optim.Adam(
             filter(lambda p: p.requires_grad, model.parameters()), 
             lr=lr, 
-            weight_decay=1e-4  
+            weight_decay=weight_decay  
         )
 
-        criterion = nn.CrossEntropyLoss()
+        # Áp dụng Class Weights (Phạt nặng nếu đoán sai ô có mực tô)
+        # Ô trống (0) chiếm 3/4, Ô có tô (1) chiếm 1/4 -> Phạt Class 1 gấp 3 lần Class 0
+        class_weights = torch.tensor([class_weight_0, class_weight_1], dtype=torch.float).to(device)
+        criterion = nn.CrossEntropyLoss(weight=class_weights)
         
         # 3. Xóa dòng `epochs = 10` đi! Dùng biến epochs đã lấy từ YAML ở đầu file
         best_val_loss = float('inf')
@@ -136,6 +162,7 @@ if __name__ == "__main__":
             model.train()
             train_loss = 0.0
             for images, labels in train_loader:
+                images, labels = images.to(device), labels.to(device)
                 optimizer.zero_grad()
                 outputs = model(images)
                 loss = criterion(outputs, labels)
@@ -173,4 +200,3 @@ if __name__ == "__main__":
             print("📦 Model đạt chuẩn! Đã lưu lên MinIO và Registry.")
         else:
             print("⚠️ Điểm Test quá thấp, từ chối lưu model vào Registry.") 
-
