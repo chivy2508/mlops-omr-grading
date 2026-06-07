@@ -9,6 +9,7 @@ import json
 import uuid
 from prometheus_client import make_asgi_app, Counter, Gauge
 import base64
+import asyncio
 
 # ==========================================
 # 1. CẤU HÌNH MLFLOW & MINIO 
@@ -108,15 +109,44 @@ def send_discord_alert(message: str):
 # ==========================================
 print("🔄 Đang tải mô hình OMR_Grading_Engine từ hệ thống...")
 MODEL_URI = "models:/OMR_Grading_Engine@production"
+current_model_version = "unknown"
 
 try:
     model = mlflow.pytorch.load_model(MODEL_URI)
     model.eval()
+    client = mlflow.tracking.MlflowClient()
+    prod_versions = client.get_latest_versions("OMR_Grading_Engine", stages=["Production"])
+    if prod_versions:
+        current_model_version = prod_versions[0].version
     print("✅ Nạp mô hình thành công!")
 except Exception as e:
     print(f"🚨 Lỗi tải mô hình chí mạng: {e}")
     import sys
     sys.exit(1)
+
+async def watch_mlflow_registry():
+    global model, current_model_version
+    client = mlflow.tracking.MlflowClient()
+    while True:
+        try:
+            prod_versions = client.get_latest_versions("OMR_Grading_Engine", stages=["Production"])
+            if prod_versions:
+                latest_prod_version = prod_versions[0].version
+                if latest_prod_version != current_model_version:
+                    print(f"🔄 Phát hiện phiên bản mới (v{latest_prod_version}), đang tải lại model...")
+                    new_model = mlflow.pytorch.load_model("models:/OMR_Grading_Engine@production")
+                    new_model.eval()
+                    model = new_model
+                    current_model_version = latest_prod_version
+                    print(f"✅ Đã cập nhật mô hình lên phiên bản v{latest_prod_version} thành công!")
+        except Exception:
+            pass
+        await asyncio.sleep(300) # Nghỉ 5 phút rồi kiểm tra lại
+
+@app.on_event("startup")
+async def startup_event():
+    # Kích hoạt luồng chạy ngầm ngay khi API khởi động
+    asyncio.create_task(watch_mlflow_registry())
 
 def check_blur_and_brightness(image_gray: np.ndarray):
     laplacian_var = cv2.Laplacian(image_gray, cv2.CV_64F).var()
@@ -329,7 +359,7 @@ async def predict_omr(file: UploadFile = File(...)):
             })
 
         # =========================================================
-        # PIPELINE 2 (CLASSIFICATION): MobileNet Nhị phân
+        # MobileNet Nhị phân
         # =========================================================
         # Chuyển list 160 ảnh thành Tensor có shape [160, 1, 32, 32]
         input_tensor = torch.tensor(np.array(patches)).unsqueeze(1) 
