@@ -10,3 +10,15 @@ mlruns/
 data_retrain/
 retrain_dataset/
 .DS_Store
+
+/data/bubbles/
+/data/synthetic_images/
+/data/processed/
+/data/raw/
+/retrain_dataset/
+
+/models/
+*.pth
+
+__pycache__/
+*.pyc

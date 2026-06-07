@@ -128,6 +128,20 @@ services:
     ports:
       - "9100:9100"
 
+  retrain_worker:
+    build: ./retrain_worker
+    container_name: omr_retrain_worker
+    depends_on:
+      - postgres
+      - minio
+      - mlflow
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    restart: unless-stopped
+    command: python retrain_worker/worker.py
+
 volumes:
   pg_data:
   minio_data:

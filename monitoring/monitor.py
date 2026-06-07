@@ -29,45 +29,6 @@ def check_api_health():
     except:
         return False
 
-def check_and_trigger():
-    """Hàm kiểm tra kho data và kích hoạt Retrain Pipeline"""
-    # Đếm cặp file hoàn chỉnh (có cả JSON) thay vì chỉ đếm ảnh
-    ready_samples = len(glob.glob(os.path.join(RETRAIN_DIR, "*_label.json")))
-    
-    if ready_samples > 0:
-        print(f"[KIỂM TRA DATA] Kho đang có {ready_samples}/{RETRAIN_THRESHOLD} mẫu sẵn sàng...", flush=True)
-    
-    if ready_samples >= RETRAIN_THRESHOLD:
-        msg = f"🚀 Đã gom đủ {ready_samples} mẫu. Bắt đầu kích hoạt Pipeline MLOps!"
-        print(msg, flush=True)
-        send_discord(msg, color=3447003)
-        
-        # GIAO TOÀN QUYỀN CHO DVC (Nó sẽ tự động chạy split -> train -> evaluate)
-        send_discord("⏳ **Đang chạy DVC Pipeline (Split Data -> Train -> Evaluate)...**", color=16776960)
-        
-        # dvc repro sẽ tự động nhìn vào dvc.yaml để chạy từ A-Z
-        pipeline_result = subprocess.run(["dvc", "repro"], capture_output=True, text=True)
-        
-        if pipeline_result.returncode == 0:
-            send_discord("✅ **Retrain thành công xuất sắc!**", color=65280)
-            
-            # --- ĐÂY LÀ BƯỚC ĐÓNG GÓI VERSION DATA MỚI ---
-            # DVC repro thành công sẽ tạo ra file dvc.lock mới. 
-            # Phải commit file này lên Git thì mới tính là 1 Version!
-            subprocess.run(["git", "add", "dvc.lock"])
-            subprocess.run(["git", "commit", "-m", f"Auto-retrain: Bổ sung {ready_samples} mẫu mới"])
-            subprocess.run(["dvc", "push"]) # (Tùy chọn) Đẩy data mới lên MinIO/S3
-            
-            # Gọi API Reload Model (Nếu bạn dùng kịch bản auto-reload)
-            try:
-                requests.post("http://omr_api:8000/reload-model", timeout=10)
-            except Exception:
-                pass
-                
-        else:
-            error_log = pipeline_result.stderr[-500:] if pipeline_result.stderr else "Lỗi pipeline."
-            send_discord(f"🚨 **Pipeline thất bại!**\nChi tiết:\n```text\n{error_log}\n```", color=16711680)
-
 def simulate_traffic():
     """Bắn ảnh để duy trì biểu đồ (Không đụng chạm logic Drift nữa)"""
     try:
@@ -106,8 +67,7 @@ if __name__ == '__main__':
 
         # 2. LOGIC ĐI TUẦN TRA & GIẢ LẬP
         if current_health:
-            # Chỉ đi tuần tra retrain và bắn data giả khi API đang sống
-            check_and_trigger()
+            # Bắn data giả khi API đang sống
             simulate_traffic()
         else:
             print("[WARN] API đang sập, tạm dừng các hoạt động tuần tra...", flush=True)
