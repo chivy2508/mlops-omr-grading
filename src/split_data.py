@@ -2,6 +2,8 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 import os
 
+print("🔄 Đang tiến hành chia tập dữ liệu...")
+
 # Đọc file gốc
 df = pd.read_csv('data/labels.csv')
 
@@ -17,3 +19,9 @@ os.makedirs('data/processed', exist_ok=True)
 train_df.to_csv('data/processed/train.csv', index=False)
 val_df.to_csv('data/processed/val.csv', index=False)
 test_df.to_csv('data/processed/test.csv', index=False)
+
+print(f"✅ Đã chia xong tổng cộng {len(df)} mẫu dữ liệu:")
+print(f"   📊 Train: {len(train_df)} mẫu (80%)")
+print(f"   📊 Val:   {len(val_df)} mẫu (10%)")
+print(f"   📊 Test:  {len(test_df)} mẫu (10%)")
+print("📁 Đã lưu file thành công vào 'data/processed/'")

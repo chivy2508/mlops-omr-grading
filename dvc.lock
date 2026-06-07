@@ -17,3 +17,50 @@ stages:
       md5: 37a64afd61557226e3b824eba0f4de0b.dir
       size: 480480
       nfiles: 3
+  split_data:
+    cmd: python src/split_data.py
+    deps:
+    - path: data/labels.csv
+      hash: md5
+      md5: 6b4d55891f369de940d96a843bebeb33
+      size: 485161
+    - path: src/split_data.py
+      hash: md5
+      md5: 42ceff359cb1de36b0383ef1e7086e46
+      size: 1002
+    outs:
+    - path: data/processed/test.csv
+      hash: md5
+      md5: 0f77ee1f446aaa2282fe7046ccdf6d2d
+      size: 48160
+    - path: data/processed/train.csv
+      hash: md5
+      md5: 77dda003600f330bb4f1db96b402f77f
+      size: 384160
+    - path: data/processed/val.csv
+      hash: md5
+      md5: d221c160f3d2c8246a8d9ca03cadcfd6
+      size: 48160
+  crop_bubbles:
+    cmd: python src/crop_bubbles.py
+    deps:
+    - path: data/processed/
+      hash: md5
+      md5: 37a64afd61557226e3b824eba0f4de0b.dir
+      size: 480480
+      nfiles: 3
+    - path: data/synthetic_images/
+      hash: md5
+      md5: 4a281b2f1678d4772223bec92ecc8ff9.dir
+      size: 708670412
+      nfiles: 5000
+    - path: src/crop_bubbles.py
+      hash: md5
+      md5: ffa556a61dba873270e0bc31dafb7af0
+      size: 3574
+    outs:
+    - path: data/bubbles/
+      hash: md5
+      md5: 6652140b5c7ade2c7bafad6996cebe44.dir
+      size: 489976810
+      nfiles: 800000

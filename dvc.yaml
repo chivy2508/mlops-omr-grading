@@ -1,14 +1,15 @@
 stages:
   # Bước 1: Trộn ảnh cũ + ảnh mới khách hàng vừa sửa
-  split_dataset:
-    cmd: python src/integrate_feedback.py
+  split_data:
+    cmd: python src/split_data.py
     deps:
-      - src/integrate_feedback.py
-      - retrain_dataset/
-      - data/raw/
+      - src/split_data.py
+      - data/labels.csv  # Mọi thay đổi từ integrate_feedback sẽ làm file này đổi
     outs:
-      - data/processed/
-
+      - data/processed/train.csv
+      - data/processed/val.csv
+      - data/processed/test.csv
+      
   crop_bubbles:
     cmd: python src/crop_bubbles.py
     deps:
