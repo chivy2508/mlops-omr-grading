@@ -22,3 +22,6 @@ retrain_dataset/
 
 __pycache__/
 *.pyc
+
+*.csv
+!data/labels.csv

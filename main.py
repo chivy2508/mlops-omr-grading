@@ -7,7 +7,7 @@ import torch
 import requests
 import json
 import uuid
-from prometheus_client import make_asgi_app, Counter, Gauge
+from prometheus_client import make_asgi_app, Counter, Gauge, Histogram
 import base64
 import asyncio
 from dotenv import load_dotenv
@@ -47,6 +47,7 @@ ANSWER_B = Counter('omr_answer_B', 'So lan dap an B')
 ANSWER_C = Counter('omr_answer_C', 'So lan dap an C')
 ANSWER_D = Counter('omr_answer_D', 'So lan dap an D')
 DRIFT_SCORE = Gauge('omr_drift_score', 'Data drift score')
+INFERENCE_TIME = Histogram('omr_inference_seconds', 'Model inference time')
 
 ANSWER_COUNTERS = {'A': ANSWER_A, 'B': ANSWER_B, 'C': ANSWER_C, 'D': ANSWER_D}
 REFERENCE_DIST = {'A': 0.25, 'B': 0.25, 'C': 0.25, 'D': 0.25}

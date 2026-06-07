@@ -4,7 +4,7 @@ stages:
     cmd: python src/split_data.py
     deps:
       - src/split_data.py
-      - data/labels.csv  # Mọi thay đổi từ integrate_feedback sẽ làm file này đổi
+      - data/labels.csv 
     outs:
       - data/processed/train.csv
       - data/processed/val.csv
@@ -24,10 +24,11 @@ stages:
     deps:
       - config/config.yaml
       - src/train.py
-      - data/bubbles/train/  # Đã đổi: Model giờ chỉ ăn ảnh 32x32 thay vì ảnh to
+      - data/bubbles/train/ 
       - data/bubbles/val/
     outs:
-      - best_model.pth
+      - best_model.pth:
+          desc: "Trained model checkpoint"
 
   # Bước 3: Đánh giá mô hình (Phải tốt hơn thì mới lên sóng)
   evaluate:
