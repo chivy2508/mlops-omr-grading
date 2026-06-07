@@ -1,0 +1,12 @@
+model:
+  epochs: 20
+  patience: 5
+  batch_size: 128
+  learning_rate: 0.001
+  dropout_rate: 0.5
+
+preprocessing:
+  image_size: 32
+  blur_threshold: 25
+  brightness_min: 40
+  brightness_max: 220

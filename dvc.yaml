@@ -21,6 +21,7 @@ stages:
   train:
     cmd: python src/train.py
     deps:
+      - config/config.yaml
       - src/train.py
       - data/bubbles/train/  # Đã đổi: Model giờ chỉ ăn ảnh 32x32 thay vì ảnh to
       - data/bubbles/val/

@@ -10,6 +10,13 @@ import numpy as np
 import random
 from torchvision import datasets, transforms
 
+import yaml
+with open("config/config.yaml", "r") as f:
+    config = yaml.safe_load(f)
+
+batch_size = config['model']['batch_size']
+epochs = config['model']['epochs']
+
 def seed_everything(seed=42):
     random.seed(seed)
     os.environ['PYTHONHASHSEED'] = str(seed)
@@ -103,22 +110,26 @@ if __name__ == "__main__":
         val_data   = datasets.ImageFolder(root='data/bubbles/val', transform=val_transform)
         test_data   = datasets.ImageFolder(root='data/bubbles/test', transform=val_transform)
 
-        train_loader = DataLoader(train_data, batch_size=256, shuffle=True)
-        val_loader   = DataLoader(val_data, batch_size=256, shuffle=False)
-        test_loader  = DataLoader(test_data, batch_size=256, shuffle=False)
+        train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
+        val_loader   = DataLoader(val_data, batch_size=batch_size, shuffle=False)
+        test_loader  = DataLoader(test_data, batch_size=batch_size, shuffle=False)
 
         model = MobileNetBubble()
 
+        # 2. Bạn có thể lấy luôn learning rate và patience từ config cho xịn!
+        lr = config['model'].get('learning_rate', 0.001)
+        patience = config['model'].get('patience', 2)
+
         optimizer = torch.optim.Adam(
-            filter(lambda p: p.requires_grad, model.parameters()), # Chỉ train các hàm chưa bị khóa
-            lr=0.001, 
-            weight_decay=1e-4  # Lực phạt cực tốt để chống Overfit
+            filter(lambda p: p.requires_grad, model.parameters()), 
+            lr=lr, 
+            weight_decay=1e-4  
         )
 
         criterion = nn.CrossEntropyLoss()
-        epochs = 10 
+        
+        # 3. Xóa dòng `epochs = 10` đi! Dùng biến epochs đã lấy từ YAML ở đầu file
         best_val_loss = float('inf')
-        patience = 2 
         trigger_times = 0
 
         for epoch in range(epochs):
