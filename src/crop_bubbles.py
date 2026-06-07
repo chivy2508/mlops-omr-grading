@@ -3,6 +3,15 @@ import os
 import pandas as pd
 import numpy as np
 
+def clean_and_binarize(aligned_image: np.ndarray) -> np.ndarray:
+    """Đồng bộ hàm tiền xử lý này từ main.py để Train và Inference ăn khớp nhau"""
+    blur = cv2.GaussianBlur(aligned_image, (3, 3), 0)
+    cleaned = cv2.adaptiveThreshold(
+        blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+        cv2.THRESH_BINARY, 11, 2
+    )
+    return cleaned
+
 def create_bubble_dataset(csv_path, img_dir, output_dir):
     """
     Cắt tờ giấy 800x1200 thành 160 ô 32x32 và phân loại vào 0_empty / 1_filled.
@@ -31,6 +40,8 @@ def create_bubble_dataset(csv_path, img_dir, output_dir):
         img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
         if img is None: continue
         img = cv2.resize(img, (800, 1200)) # Rất quan trọng!
+        
+        img = clean_and_binarize(img)
         
         # Đọc mảng 40 đáp án đúng từ CSV
         raw_labels = row.iloc[1:41].values

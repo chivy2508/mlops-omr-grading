@@ -119,10 +119,8 @@ with col2:
         with st.spinner("Đang đợi Backend kéo Model và xử lý ảnh..."):
             try:
                 files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
-                FASTAPI_URL = "http://omr_api:8000/predict" 
                 FASTAPI_URL = os.getenv("FASTAPI_PREDICT_URL", "http://omr_api:8000/predict")
                 
-                response = requests.post(FASTAPI_URL, files=files)
                 response = requests.post(FASTAPI_URL, files=files, timeout=15)
                 
                 if response.status_code == 200:
@@ -135,7 +133,6 @@ with col2:
             except requests.ConnectionError:
                 st.error("Không thể kết nối đến máy chủ API. Vui lòng kiểm tra xem API đã được bật chưa.")
             except Exception as e:
-                st.error(f"Không kết nối được với API: {e}")
                 st.error(f"Lỗi không xác định khi kết nối API: {e}")
                 
     elif uploaded_file is None:
@@ -166,10 +163,17 @@ with col2:
             if submit_feedback:
                 with st.spinner("Đang lưu dữ liệu chuẩn..."):
                     try:
-                        feedback_files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
+                        # BƯỚC ĐỘT PHÁ: Lưu lại ảnh đã căn chỉnh (aligned) thay vì ảnh gốc (raw).
+                        # Đảm bảo Data Retrain luôn vuông vắn 800x1200 và cắt tọa độ chính xác!
+                        aligned_b64 = data.get("aligned_image", "")
+                        if aligned_b64:
+                            img_bytes = base64.b64decode(aligned_b64)
+                            feedback_files = {"file": (f"aligned_{uploaded_file.name}", img_bytes, "image/jpeg")}
+                        else:
+                            feedback_files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
+                            
                         feedback_data = {"correct_labels": edited_df.to_json(orient="records")}
                         
-                        FEEDBACK_URL = "http://omr_api:8000/feedback"
                         FEEDBACK_URL = os.getenv("FASTAPI_FEEDBACK_URL", "http://omr_api:8000/feedback")
                         feedback_response = requests.post(FEEDBACK_URL, files=feedback_files, data=feedback_data)
                         

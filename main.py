@@ -135,12 +135,13 @@ async def watch_mlflow_registry():
     client = mlflow.tracking.MlflowClient()
     while True:
         try:
-            prod_versions = client.get_latest_versions("OMR_Grading_Engine", stages=["Production"])
+            # Chuyển tác vụ chặn (blocking) sang ThreadPool để không làm treo API chính
+            prod_versions = await asyncio.to_thread(client.get_latest_versions, "OMR_Grading_Engine", stages=["Production"])
             if prod_versions:
                 latest_prod_version = prod_versions[0].version
                 if latest_prod_version != current_model_version:
                     print(f"🔄 Phát hiện phiên bản mới (v{latest_prod_version}), đang tải lại model...")
-                    new_model = mlflow.pytorch.load_model("models:/OMR_Grading_Engine@production")
+                    new_model = await asyncio.to_thread(mlflow.pytorch.load_model, "models:/OMR_Grading_Engine@production")
                     new_model.eval()
                     model = new_model
                     current_model_version = latest_prod_version
@@ -339,13 +340,13 @@ async def predict_omr(file: UploadFile = File(...)):
         final_processed_image = clean_and_binarize(aligned_img)
         final_processed_image = cv2.resize(final_processed_image, (800, 1200))
 
-        with open("data/template_config.json", "r") as f:
-            template_config = json.load(f)
+        if TEMPLATE_CONFIG is None:
+            return {"trang_thai": "lỗi", "chi_tiet": "Server thiếu file template_config.json"}
             
         patches = []
         coords_info = []
         
-        for bubble in template_config["bubbles"]:
+        for bubble in TEMPLATE_CONFIG["bubbles"]:
             center_x = bubble["x"]
             center_y = bubble["y"]
             half_w = bubble["w"] // 2
