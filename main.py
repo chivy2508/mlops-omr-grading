@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, Form
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 import mlflow
 import os
 import cv2
@@ -309,6 +309,14 @@ async def predict_omr(file: UploadFile = File(...)):
     TOTAL_REQUESTS.inc()
     if model is None:
         return {"trang_thai": "lỗi", "chi_tiet": "Mô hình chưa được nạp, vui lòng kiểm tra server"}
+
+    # Validate file size (Giới hạn 10MB)
+    if file.size is not None and file.size > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File quá lớn (Tối đa 10MB)")
+    
+    # Validate file format
+    if file.content_type not in ["image/jpeg", "image/png"]:
+        raise HTTPException(status_code=400, detail="Chỉ chấp nhận định dạng JPG/PNG")
         
     try:
         image_bytes = await file.read()

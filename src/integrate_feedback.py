@@ -4,6 +4,7 @@ import glob
 import shutil
 import pandas as pd
 import subprocess
+import fcntl
 
 # --- CẤU HÌNH ĐƯỜNG DẪN ---
 RETRAIN_DIR = "./retrain_dataset"
@@ -58,7 +59,13 @@ def process_and_trigger_pipeline():
         cols = ['filename'] + [f'Q{i}' for i in range(1, 41)]
         df_new = df_new.reindex(columns=cols) 
         
-        df_new.to_csv(TARGET_CSV, mode='a', header=False, index=False)
+        with open(TARGET_CSV, 'a', newline='', encoding='utf-8') as f:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            try:
+                df_new.to_csv(f, header=False, index=False)
+            finally:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
         print(f"✅ Đã ghi thêm {len(new_rows)} dòng vào {TARGET_CSV}")
         
         # 2. BÓP CÒ DVC & GIT TỰ ĐỘNG
