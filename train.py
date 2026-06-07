@@ -6,9 +6,9 @@ import torch.nn as nn
 import torchvision.models as models
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from src.dataset import OMRDataset
 import numpy as np
 import random
+from torchvision import datasets, transforms
 
 def seed_everything(seed=42):
     random.seed(seed)
@@ -36,245 +36,130 @@ def get_git_hash():
     except:
         return "unknown"
 
-class MobileNetOMR(nn.Module):
-    def __init__(self, num_questions=40, num_choices=4):
-        super(MobileNetOMR, self).__init__()
-
+class MobileNetBubble(nn.Module):
+    def __init__(self):
+        super(MobileNetBubble, self).__init__()
         self.backbone = models.mobilenet_v2(weights=models.MobileNet_V2_Weights.DEFAULT)
-
-
+        
+        # Sửa lớp đầu tiên thành 1 kênh màu
         original_conv = self.backbone.features[0][0]
         self.backbone.features[0][0] = nn.Conv2d(
-            in_channels=1, # Ảnh xám
-            out_channels=original_conv.out_channels,
-            kernel_size=original_conv.kernel_size,
-            stride=original_conv.stride,
-            padding=original_conv.padding,
-            bias=False
+            1, original_conv.out_channels, kernel_size=original_conv.kernel_size,
+            stride=original_conv.stride, padding=original_conv.padding, bias=False
+        )
+        
+        # --- LỚP PHÒNG NGỰ 2: ĐÓNG BĂNG BACKBONE ---
+        for param in self.backbone.features.parameters():
+            param.requires_grad = False  # KHÔNG cập nhật trọng số phần này
+        
+        # --- LỚP PHÒNG NGỰ 3: DROPOUT MẠNH TAY ---
+        in_features = self.backbone.classifier[1].in_features
+        self.backbone.classifier = nn.Sequential(
+            nn.Dropout(p=0.5), # Tắt ngẫu nhiên 50% nơ-ron để chống học vẹt
+            nn.Linear(in_features, 2) # Output 2 class: 0 (Trống) và 1 (Đã tô)
         )
 
-        in_features = self.backbone.classifier[1].in_features
-        self.backbone.classifier[1] = nn.Linear(in_features, num_questions * num_choices)
-        self.num_questions = num_questions
-        self.num_choices = num_choices
-
-
-
     def forward(self, x):
-
-        x = self.backbone(x)
-
-        # Reshape về dạng [Batch_size, 40 câu, 4 đáp án]
-
-        return x.view(-1, self.num_questions, self.num_choices)
+        return self.backbone(x)
 
 
 
 def evaluate_model(model, dataloader, criterion):
-
-    model.eval() # Bật chế độ đánh giá (tắt Dropout, Batch Norm...)
-
+    model.eval()
     total_loss = 0.0
-
     correct_answers = 0
-
     total_answers = 0
-
-   
-
-    with torch.no_grad(): # Đóng băng gradient, không học thêm
-
+    with torch.no_grad(): 
         for images, labels in dataloader:
-
             outputs = model(images)
-
-            loss = criterion(outputs.permute(0, 2, 1), labels.long())
-
+            loss = criterion(outputs, labels)
             total_loss += loss.item()
-
-           
-
-            # Tính độ chính xác (Accuracy): đếm số câu trả lời khớp với nhãn
-
-            predictions = torch.argmax(outputs, dim=2)
-
+            predictions = torch.argmax(outputs, dim=1)
             correct_answers += (predictions == labels).sum().item()
-
-            total_answers += labels.numel() # Tổng số câu hỏi (batch_size * 40)
-
-           
+            total_answers += labels.numel() 
 
     avg_loss = total_loss / len(dataloader)
-
     accuracy = correct_answers / total_answers
-
     return avg_loss, accuracy
 
-
-
-# --- QUY TRÌNH HUẤN LUYỆN ĐẦY ĐỦ ---
 
 if __name__ == "__main__":
 
     with mlflow.start_run() as run:
 
         print("🚀 Khởi động Dataloader với đủ Train, Val, Test...")
+        train_transform = transforms.Compose([
+            transforms.Grayscale(num_output_channels=1),
+            transforms.RandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.9, 1.1)),
+            transforms.ToTensor()
+        ])
 
-       
+        val_transform = transforms.Compose([
+            transforms.Grayscale(num_output_channels=1),
+            transforms.ToTensor()
+        ])
 
-        # 1. LOAD 3 TẬP DỮ LIỆU TỪ DVC PIPELINE
+        train_data = datasets.ImageFolder(root='data/bubbles/train', transform=train_transform)
+        val_data   = datasets.ImageFolder(root='data/bubbles/val', transform=val_transform)
+        test_data   = datasets.ImageFolder(root='data/bubbles/test', transform=val_transform)
 
-        train_data = OMRDataset('data/processed/train.csv', 'data/synthetic_images/')
+        train_loader = DataLoader(train_data, batch_size=256, shuffle=True)
+        val_loader   = DataLoader(val_data, batch_size=256, shuffle=False)
+        test_loader  = DataLoader(test_data, batch_size=256, shuffle=False)
 
-        val_data   = OMRDataset('data/processed/val.csv', 'data/synthetic_images/')
+        model = MobileNetBubble()
 
-        test_data  = OMRDataset('data/processed/test.csv', 'data/synthetic_images/')
-
-       
-
-        train_loader = DataLoader(train_data, batch_size=8, shuffle=True)
-
-        val_loader   = DataLoader(val_data, batch_size=8, shuffle=False)
-
-        test_loader  = DataLoader(test_data, batch_size=8, shuffle=False)
-
-
-
-        model = MobileNetOMR()
-
-       
-
-        # Chế độ học: Chúng ta sẽ dùng learning rate nhỏ hơn (0.0001)
-
-        # vì chúng ta đang Fine-tuning trên một model đã mạnh sẵn
-
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
+        optimizer = torch.optim.Adam(
+            filter(lambda p: p.requires_grad, model.parameters()), # Chỉ train các hàm chưa bị khóa
+            lr=0.001, 
+            weight_decay=1e-4  # Lực phạt cực tốt để chống Overfit
+        )
 
         criterion = nn.CrossEntropyLoss()
-
-       
-
-        epochs = 10 # Tăng số Epoch lên nhưng sẽ dùng Early Stopping
-
+        epochs = 10 
         best_val_loss = float('inf')
-
-        patience = 2 # Nếu 2 lần val_loss không giảm thì dừng
-
+        patience = 2 
         trigger_times = 0
 
-
-
         for epoch in range(epochs):
-
-            # PHA 1: TRAIN
-
             model.train()
-
             train_loss = 0.0
-
             for images, labels in train_loader:
-
                 optimizer.zero_grad()
-
                 outputs = model(images)
-
-                loss = criterion(outputs.permute(0, 2, 1), labels.long())
-
+                loss = criterion(outputs, labels)
                 loss.backward()
-
                 optimizer.step()
-
                 train_loss += loss.item()
-
-           
-
             avg_train_loss = train_loss / len(train_loader)
-
-           
-
-            # PHA 2: VALIDATION
-
             val_loss, val_acc = evaluate_model(model, val_loader, criterion)
-
-           
-
-            # LOGGING
-
             mlflow.log_metric("train_loss", avg_train_loss, step=epoch)
-
             mlflow.log_metric("val_loss", val_loss, step=epoch)
-
             mlflow.log_metric("val_accuracy", val_acc, step=epoch)
-
-           
-
             print(f"Epoch {epoch+1} | Train Loss: {avg_train_loss:.4f} | Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")
 
-
-
-            # --- EARLY STOPPING LOGIC ---
-
             if val_loss < best_val_loss:
-
                 best_val_loss = val_loss
-
                 trigger_times = 0
-
-                # Lưu model tốt nhất tạm thời
-
                 torch.save(model.state_dict(), "best_model.pth")
-
             else:
-
                 trigger_times += 1
-
                 if trigger_times >= patience:
-
                     print(f"🛑 Early Stopping tại Epoch {epoch+1}!")
-
                     break
 
-
-
-        # Tải lại trọng số tốt nhất trước khi test
-
         model.load_state_dict(torch.load("best_model.pth"))
-
-       
-
-        # --- PHA 3: TEST CUỐI CÙNG ---
-
         test_loss, test_acc = evaluate_model(model, test_loader, criterion)
-
-       
-
-        # Ghi log chỉ số test (Không có step, vì nó là điểm số tổng kết)
-
         mlflow.log_metric("final_test_loss", test_loss)
-
         mlflow.log_metric("final_test_accuracy", test_acc)
-
         print(f"🏆 Kết quả Test Cuối cùng: Accuracy = {test_acc:.4f}")
-
-
-
-        # Đăng ký model nếu kết quả Test đủ tốt
-
-        if test_acc > 0.8: # Ví dụ: Độ chính xác > 80% mới cho lên Registry
-
+        if test_acc > 0.8: 
             mlflow.pytorch.log_model(
-
                 pytorch_model=model,
-
                 artifact_path="model_weights",
-
                 registered_model_name="OMR_Grading_Engine"
-
             )
-
             print("📦 Model đạt chuẩn! Đã lưu lên MinIO và Registry.")
-
         else:
-
             print("⚠️ Điểm Test quá thấp, từ chối lưu model vào Registry.") 
 

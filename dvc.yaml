@@ -10,24 +10,31 @@ stages:
     outs:
       - data/processed/
 
-  # Bước 2: Bắt đầu Train mô hình mới
+  crop_bubbles:
+    cmd: python src/crop_bubbles.py
+    deps:
+      - src/crop_bubbles.py
+      - data/processed/  # Chờ file CSV từ Bước 1
+      - data/synthetic_images/ # Ảnh gốc để cắt
+    outs:
+      - data/bubbles/
+
   train:
     cmd: python src/train.py
     deps:
       - src/train.py
-      - data/processed/train/
-
+      - data/bubbles/train/  # Đã đổi: Model giờ chỉ ăn ảnh 32x32 thay vì ảnh to
+      - data/bubbles/val/
     outs:
-      - models/OMR_Grading_Engine.pth
+      - best_model.pth
 
   # Bước 3: Đánh giá mô hình (Phải tốt hơn thì mới lên sóng)
   evaluate:
     cmd: python src/evaluate.py
     deps:
       - src/evaluate.py
-      - models/OMR_Grading_Engine.pth
-      - data/processed/test/
-      
+      - best_model.pth
+      - data/bubbles/test/   
     metrics:
       - metrics.json:
           cache: false
