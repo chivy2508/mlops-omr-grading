@@ -30,6 +30,10 @@ if not MLFLOW_TRACKING_URI:
     raise ValueError("MLFLOW_TRACKING_URI must be set")
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
+TEMPLATE_CONFIG = None
+if os.path.exists("data/template_config.json"):
+    with open("data/template_config.json", "r") as f:
+        TEMPLATE_CONFIG = json.load(f)
 
 
 app = FastAPI(title="OMR Grading Engine API")
@@ -110,9 +114,6 @@ def send_discord_alert(message: str):
     except:
         pass
 
-# ==========================================
-# 2. TẢI MÔ HÌNH TỰ ĐỘNG TỪ MLFLOW
-# ==========================================
 print("🔄 Đang tải mô hình OMR_Grading_Engine từ hệ thống...")
 MODEL_URI = "models:/OMR_Grading_Engine@production"
 current_model_version = "unknown"
@@ -170,14 +171,12 @@ def check_blur_and_brightness(image_gray: np.ndarray):
 
 
 def get_aligned_paper(image: np.ndarray, target_w: int = 800, target_h: int = 1200):
-    # Lấy diện tích ảnh gốc để làm chuẩn so sánh
     orig_h, orig_w = image.shape[:2]
     total_area = orig_h * orig_w
     
     blur = cv2.GaussianBlur(image, (5, 5), 0)
     edged = cv2.Canny(blur, 75, 200)
     
-    # Dùng RETR_LIST thay vì EXTERNAL để quét được cả viền giấy bên ngoài lẫn khung in bên trong
     cnts, _ = cv2.findContours(edged.copy(), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
     
     paper_contour = None
@@ -189,15 +188,11 @@ def get_aligned_paper(image: np.ndarray, target_w: int = 800, target_h: int = 12
             
             if len(approx) == 4:
                 area = cv2.contourArea(approx)
-                # ĐIỀU KIỆN SỐNG CÒN: Khung tìm được phải chiếm ít nhất 30% diện tích ảnh gốc.
-                # Nếu bé hơn, nó chỉ là một cái khung phụ (như khung điền tên) -> Bỏ qua ngay!
                 if area > 0.3 * total_area:
                     paper_contour = approx
                     break
                     
     if paper_contour is None:
-        # FALLBACK (Dự phòng): Nếu không tìm thấy khung giấy nào đủ to (do chụp trên nền trắng, thiếu tương phản), 
-        # thì không cắt xén gì cả. Ép thẳng tấm ảnh gốc của bạn về 800x1200.
         return cv2.resize(image, (target_w, target_h))
         
     rect = np.zeros((4, 2), dtype="float32")
@@ -227,11 +222,8 @@ def get_dynamic_start(binary_image: np.ndarray, default_x=141.0, default_y=343.0
     """
     Tìm ô vuông đen (Anchor) ở gần Câu 1 để xác định lại START_X và START_Y
     """
-    # cv2.findContours tìm vật thể trắng trên nền đen.
-    # Ảnh binary hiện tại của bạn thường là nền trắng, ô đen -> Cần đảo ngược màu (Invert)
     inv = cv2.bitwise_not(binary_image)
     
-    # Khoanh vùng tìm kiếm: Chỉ tìm ở 1/4 góc trên - bên trái tờ giấy để code chạy nhanh và không bắt nhầm rác
     h, w = inv.shape
     roi = inv[0:int(h/2), 0:int(w/2)]
     
@@ -373,34 +365,22 @@ async def predict_omr(file: UploadFile = File(...)):
                 "y": center_y
             })
 
-        # =========================================================
-        # PIPELINE 2 (CLASSIFICATION): MobileNet Nhị phân
-        # =========================================================
-        # Chuyển list 160 ảnh thành Tensor có shape [160, 1, 32, 32]
         input_tensor = torch.tensor(np.array(patches)).unsqueeze(1) 
         
         with torch.no_grad(): 
-            # Model trả ra shape [160, 2] (Xác suất cho class 0 và class 1)
             outputs = model(input_tensor)
             
-            # Lấy xác suất của class 1 (Ô đã bị tô đen) dùng hàm Softmax
             probs = torch.softmax(outputs, dim=1)[:, 1]
 
-        # =========================================================
-        # TỔNG HỢP KẾT QUẢ VÀ TÌM ĐÁP ÁN ĐÚNG
-        # =========================================================
         final_answers = []
         predictions_detail = []
         
         for q in range(40):
-            # Lấy 4 mức độ tự tin (Confidence) của 4 đáp án A, B, C, D trong câu q
             q_probs = probs[q*4 : (q+1)*4]
             
-            # Chọn ô có điểm "tô đen" cao nhất
             best_ans_idx = torch.argmax(q_probs).item()
             best_prob = q_probs[best_ans_idx].item()
             
-            # Thiết lập ngưỡng: Nếu không ô nào đạt độ đen > 0.5 thì coi như bỏ trống (N)
             if best_prob > 0.5:
                 chosen_char = ['A', 'B', 'C', 'D'][best_ans_idx]
             else:
@@ -408,7 +388,6 @@ async def predict_omr(file: UploadFile = File(...)):
                 
             final_answers.append(chosen_char)
             
-            # Cấu trúc JSON trả về Streamlit
             chosen_coord = coords_info[q*4 + best_ans_idx]
             predictions_detail.append({
                 "cau": q + 1,
@@ -418,11 +397,9 @@ async def predict_omr(file: UploadFile = File(...)):
                 "confidence": float(best_prob)
             })
 
-        # --- Ghi nhận Metrics ---
         SUCCESS_REQUESTS.inc()
         global total_predictions
         
-        # Chỉ đếm số liệu cho đáp án A, B, C, D hợp lệ (bỏ qua N)
         valid_answers = [ans for ans in final_answers if ans in ANSWER_COUNTERS]
         for ans in valid_answers: 
             ANSWER_COUNTERS[ans].inc()

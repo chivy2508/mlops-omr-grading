@@ -61,6 +61,10 @@ with open("metrics.json", "w") as f:
 
 new_accuracy = metrics["test_accuracy"]
 
+# Đẩy thêm Precision và Recall lên bảng điều khiển MLflow của version này
+client.log_metric(latest_version_obj.run_id, "precision_filled", metrics["precision_filled"])
+client.log_metric(latest_version_obj.run_id, "recall_filled", metrics["recall_filled"])
+
 try:
     prod_model = client.get_latest_versions(model_name, stages=["Production"])[0]
     prod_accuracy = client.get_run(prod_model.run_id).data.metrics.get("final_test_accuracy", 0.0)

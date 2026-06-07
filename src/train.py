@@ -200,3 +200,5 @@ if __name__ == "__main__":
             print("📦 Model đạt chuẩn! Đã lưu lên MinIO và Registry.")
         else:
             print("⚠️ Điểm Test quá thấp, từ chối lưu model vào Registry.") 
+            import sys
+            sys.exit(1) # Bắt buộc dừng pipeline DVC tại đây để chặn bước Evaluate!
