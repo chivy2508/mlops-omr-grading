@@ -14,7 +14,7 @@ import yaml
 with open("config/config.yaml", "r") as f:
     config = yaml.safe_load(f)
 
-load_dotenv(find_dotenv())
+load_dotenv()
 
 batch_size = config['model']['batch_size']
 epochs = config['model']['epochs']
