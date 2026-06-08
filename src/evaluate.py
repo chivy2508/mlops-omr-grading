@@ -68,7 +68,6 @@ with open("metrics.json", "w") as f:
 
 new_accuracy = metrics["test_accuracy"]
 
-# Đẩy thêm Precision và Recall lên bảng điều khiển MLflow của version này
 client.log_metric(latest_version_obj.run_id, "precision_filled", metrics["precision_filled"])
 client.log_metric(latest_version_obj.run_id, "recall_filled", metrics["recall_filled"])
 
@@ -81,13 +80,12 @@ except IndexError:
 if new_accuracy >= prod_accuracy * 0.98:
     print(f"✅ Pass! Mô hình mới ({new_accuracy}) tốt hơn/ngang mô hình cũ ({prod_accuracy})")
     
-    # ĐÂY LÀ ĐOẠN CODE "THAY TRIỀU ĐỔI ĐẠI" CỦA MLFLOW
     print(f"🚀 Đang đưa mô hình phiên bản {new_model_version} lên Production...")
     client.transition_model_version_stage(
         name=model_name,
         version=new_model_version,
         stage="Production",
-        archive_existing_versions=True  # Phép thuật nằm ở đây: Tự động gỡ tag model cũ!
+        archive_existing_versions=True  
     )
     print("🎉 Triển khai thành công!")
     
