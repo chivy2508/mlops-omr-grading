@@ -2,7 +2,7 @@ model:
   batch_size: 256           
   epochs: 20               
   learning_rate: 0.001     
-  patience: 3              
+  patience: 5              
   weight_decay: 0.00001    
   dropout: 0.2             
   class_weight_0: 1.0     

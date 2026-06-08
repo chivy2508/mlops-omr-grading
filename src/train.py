@@ -8,10 +8,13 @@ from torch.utils.data import DataLoader
 import numpy as np
 import random
 from torchvision import datasets, transforms
+from dotenv import load_dotenv
 
 import yaml
 with open("config/config.yaml", "r") as f:
     config = yaml.safe_load(f)
+
+load_dotenv(find_dotenv())
 
 batch_size = config['model']['batch_size']
 epochs = config['model']['epochs']
@@ -28,10 +31,8 @@ def seed_everything(seed=42):
 
 seed_everything(42)
 
-os.environ["AWS_ACCESS_KEY_ID"] = "admin"
-os.environ["AWS_SECRET_ACCESS_KEY"] = "password123"
-os.environ["MLFLOW_S3_ENDPOINT_URL"] = "http://localhost:9000"
-mlflow.set_tracking_uri("http://localhost:5000")
+mlflow_tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
+mlflow.set_tracking_uri(mlflow_tracking_uri)
 mlflow.set_experiment("OMR_Grading_System")
 
 
@@ -141,6 +142,10 @@ if __name__ == "__main__":
             weight_decay=weight_decay  
         )
 
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode='min', factor=0.1, patience=3, verbose=True
+        )
+
         class_weights = torch.tensor([class_weight_0, class_weight_1], dtype=torch.float).to(device)
         criterion = nn.CrossEntropyLoss(weight=class_weights)
         
@@ -160,10 +165,13 @@ if __name__ == "__main__":
                 train_loss += loss.item()
             avg_train_loss = train_loss / len(train_loader)
             val_loss, val_acc = evaluate_model(model, val_loader, criterion)
+            scheduler.step(val_loss)
+            current_lr = optimizer.param_groups[0]['lr']
             mlflow.log_metric("train_loss", avg_train_loss, step=epoch)
             mlflow.log_metric("val_loss", val_loss, step=epoch)
             mlflow.log_metric("val_accuracy", val_acc, step=epoch)
-            print(f"Epoch {epoch+1} | Train Loss: {avg_train_loss:.4f} | Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")
+            mlflow.log_metric("learning_rate_step", current_lr, step=epoch)
+            print(f"Epoch {epoch+1} | Train Loss: {avg_train_loss:.4f} | Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f} | LR: {current_lr}")
 
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
@@ -188,6 +196,6 @@ if __name__ == "__main__":
             )
             print("📦 Model đạt chuẩn! Đã lưu lên MinIO và Registry.")
         else:
-            print("⚠️ Điểm Test quá thấp, từ chối lưu model vào Registry.") 
+            print("⚠️ Điểm Test quá thấp, từ chối lưu model vào Registry.")
             import sys
             sys.exit(1) 

@@ -5,6 +5,13 @@ from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 from sklearn.metrics import classification_report
 import json
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+mlflow_tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
+mlflow.set_tracking_uri(mlflow_tracking_uri)
 
 client = MlflowClient()
 model_name = "OMR_Grading_Engine"

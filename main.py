@@ -15,8 +15,6 @@ from src.align_document import get_aligned_paper
 
 load_dotenv()
 
-
-
 RETRAIN_DIR = "./retrain_dataset"
 os.makedirs(RETRAIN_DIR, exist_ok=True)
 
@@ -39,7 +37,6 @@ DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
 metrics_app = make_asgi_app()
 app.mount("/metrics", metrics_app)
 
-# --- 3. ĐỊNH NGHĨA QUYỂN SỔ GHI CHÉP (METRICS) ---
 TOTAL_REQUESTS = Counter('omr_total_requests', 'Tong so request')
 SUCCESS_REQUESTS = Counter('omr_success_requests', 'So request thanh cong')
 FAILED_REQUESTS = Counter('omr_failed_requests', 'So request that bai')
