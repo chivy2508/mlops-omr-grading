@@ -42,32 +42,38 @@ def get_aligned_paper(image: np.ndarray, target_w: int = 800, target_h: int = 12
                 
     # 3. FALLBACK: Nếu chụp mất viền giấy -> Dò tìm 4 ô vuông đen (Anchors) ở 4 góc
     if rect is None:
-        print("⚠️ Không tìm thấy viền giấy! Kích hoạt Fallback: Dò tìm 4 ô neo vuông đen...")
-        _, binary = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        inv = cv2.bitwise_not(binary)
-        cnts_anchor, _ = cv2.findContours(inv, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        binary = cv2.adaptiveThreshold(blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                       cv2.THRESH_BINARY_INV, 11, 2)
+        cnts_anchor, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
-        corners = []
-        # Chia ảnh làm 4 góc phần tư để tìm 4 ô vuông đen
-        quadrants = {
-            'top_left': (0, 0, orig_w//2, orig_h//2),
-            'top_right': (orig_w//2, 0, orig_w, orig_h//2),
-            'bottom_left': (0, orig_h//2, orig_w//2, orig_h),
-            'bottom_right': (orig_w//2, orig_h//2, orig_w, orig_h),
-        }
+        valid_anchors = []
         
-        for quad_name, (qx1, qy1, qx2, qy2) in quadrants.items():
-            for c in cnts_anchor:
-                x, y, wb, hb = cv2.boundingRect(c)
-                if qx1 <= x <= qx2 and qy1 <= y <= qy2:
-                    aspect_ratio = wb / float(hb)
-                    # Nhận dạng ô vuông: Tỷ lệ dài/rộng ~1 và diện tích 150-2000 px
-                    if 0.8 <= aspect_ratio <= 1.2 and 150 < cv2.contourArea(c) < 2000:
-                        corners.append([x + wb//2, y + hb//2]) 
-                        break 
-                        
-        if len(corners) == 4:
-            rect = order_points(np.array(corners, dtype="float32"))
+        for c in cnts_anchor:
+            x, y, wb, hb = cv2.boundingRect(c)
+            aspect_ratio = wb / float(hb) if hb != 0 else 0
+            area = cv2.contourArea(c)
+            
+            # Nhận dạng ô vuông: Tỷ lệ dài/rộng ~1 và diện tích 150-2000 px
+            if 0.8 <= aspect_ratio <= 1.2 and 150 < area < 2000:
+                valid_anchors.append([x + wb//2, y + hb//2])
+        
+        # Nếu tìm thấy từ 4 ô vuông trở lên (vì form này có đến 8 ô)
+        # Lọc ra 4 ô ở vị trí góc ngoài cùng
+        if len(valid_anchors) >= 4:
+            pts = np.array(valid_anchors, dtype="float32")
+            rect = np.zeros((4, 2), dtype="float32")
+            
+            # Tổng (x + y)
+            s = pts.sum(axis=1)
+            rect[0] = pts[np.argmin(s)]  # Trái-Trên (Tổng x+y nhỏ nhất)
+            rect[2] = pts[np.argmax(s)]  # Phải-Dưới (Tổng x+y lớn nhất)
+            
+            # Hiệu (y - x)
+            diff = np.diff(pts, axis=1)  
+            rect[1] = pts[np.argmin(diff)]  # Phải-Trên (y-x nhỏ nhất -> x lớn, y nhỏ)
+            rect[3] = pts[np.argmax(diff)]  # Trái-Dưới (y-x lớn nhất -> x nhỏ, y lớn)
+        else:
+            print(f"❌ Chỉ tìm thấy {len(valid_anchors)} ô neo, không đủ 4 góc!")
 
     # 4. Kéo giãn ảnh (Warp Perspective - "Ủi phẳng")
     if rect is not None:

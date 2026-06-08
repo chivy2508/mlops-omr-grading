@@ -44,22 +44,25 @@ def create_bubble_dataset(csv_path, img_dir, output_dir):
         if img is None: continue
         
         img = get_aligned_paper(img)
+        
         img = clean_and_binarize(img)
         
         raw_labels = row.iloc[1:41].values
         
         for bubble in template_config["bubbles"]:
-            q_idx = bubble["question"] - 1 # Câu hỏi từ 0-39
-            ans_char = bubble["option"]    # 'A', 'B', 'C', 'D'
+            q_idx = bubble["question"] - 1 
+            ans_char = bubble["option"]    
             center_x = bubble["x"]
             center_y = bubble["y"]
             
             # Tính Bounding Box 32x32
-            x1, y1 = int(center_x - 16), int(center_y - 16)
-            x2, y2 = int(center_x + 16), int(center_y + 16)
+            half_size = 16 
+            x1, y1 = int(center_x - half_size), int(center_y - half_size)
+            x2, y2 = int(center_x + half_size), int(center_y + half_size)
             
             bubble_patch = img[y1:y2, x1:x2]
-            if bubble_patch.shape != (32, 32): continue 
+            if bubble_patch.shape != (32, 32): 
+                continue
             
             # So sánh đáp án đúng trong CSV để phân loại 0_empty hay 1_filled
             correct_ans_str = str(raw_labels[q_idx]).strip().upper()

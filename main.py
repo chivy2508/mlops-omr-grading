@@ -226,6 +226,7 @@ async def predict_omr(file: UploadFile = File(...)):
             return {"trang_thai": "từ chối", "chi_tiet": reason_clear}
             
         aligned_img = get_aligned_paper(image, target_w=800, target_h=1200)
+        
         if aligned_img is None:
             reason_paper = "Không tìm thấy tờ phiếu thi hợp lệ."
             send_discord_alert(f"🚨 Từ chối `{file.filename}`: {reason_paper}")
