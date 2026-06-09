@@ -4,4 +4,4 @@
     remote = myremote
 ['remote "myremote"']
     url = s3://omr-data
-    endpointurl = http://minio:9000
+    endpointurl = http://localhost:9000

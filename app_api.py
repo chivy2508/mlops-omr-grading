@@ -139,7 +139,7 @@ with col2:
         st.markdown("### ✍️ Kiểm tra và Dạy lại mô hình")
         drift_score = data.get("drift_score", 0.0)
         
-        if drift_score > 0.05:
+        if drift_score > 0.1:
             st.warning(f"⚠️ Cảnh báo: Độ lệch dữ liệu hơi cao (Drift: {drift_score}). Vui lòng dò kỹ các chấm đỏ và sửa lại bảng dưới đây nếu máy đoán sai!")
         else:
             st.info("💡 Trạng thái hệ thống tốt. Nếu tình cờ thấy lỗi nhỏ, bạn có thể sửa lại để giúp mô hình thông minh hơn.")

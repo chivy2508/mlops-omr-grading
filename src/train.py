@@ -143,7 +143,7 @@ if __name__ == "__main__":
         )
 
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode='min', factor=0.1, patience=3, verbose=True
+            optimizer, mode='min', factor=0.1, patience=3
         )
 
         class_weights = torch.tensor([class_weight_0, class_weight_1], dtype=torch.float).to(device)

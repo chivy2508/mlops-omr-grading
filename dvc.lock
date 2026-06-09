@@ -69,8 +69,8 @@ stages:
       size: 25813
     - path: src/crop_bubbles.py
       hash: md5
-      md5: 9ad374301384c619cc72e042fe8ebd6c
-      size: 3423
+      md5: c985a91f4e8623fd92adb0ba472c01a7
+      size: 3387
     outs:
     - path: data/bubbles/
       hash: md5

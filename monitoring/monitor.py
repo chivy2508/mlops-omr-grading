@@ -3,7 +3,7 @@ import requests
 import os
 import random
 
-RETRAIN_THRESHOLD = 10
+RETRAIN_THRESHOLD = 50
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
 API_URL = "http://omr_api:8000/predict"
 RETRAIN_DIR = "./retrain_dataset"
