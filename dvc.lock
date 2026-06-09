@@ -94,7 +94,7 @@ stages:
     deps:
     - path: config/config.yaml
       hash: md5
-      md5: 9b0bfe1b55a378d144574495690c1417
+      md5: 1a7ca13209391155ab63ca8a053ec031
       size: 355
     - path: data/bubbles/train/
       hash: md5
@@ -108,10 +108,31 @@ stages:
       nfiles: 80000
     - path: src/train.py
       hash: md5
-      md5: ac074c29ace1e58e05e4d40667d5b720
-      size: 7541
+      md5: ed6809417b800484520413cfaa980297
+      size: 7864
     outs:
     - path: best_model.pth
       hash: md5
       md5: 09e566f115da83b29407e0880705ed28
       size: 9149451
+  evaluate:
+    cmd: python src/evaluate.py
+    deps:
+    - path: best_model.pth
+      hash: md5
+      md5: 09e566f115da83b29407e0880705ed28
+      size: 9149451
+    - path: data/bubbles/test/
+      hash: md5
+      md5: 3409900b1a08f3308683363caa9714a4.dir
+      size: 84675707
+      nfiles: 80000
+    - path: src/evaluate.py
+      hash: md5
+      md5: 81f2a792d4730ea15ca9716d33fbb147
+      size: 3261
+    outs:
+    - path: metrics.json
+      hash: md5
+      md5: ef4a8ffa28027422ccaea5198a8e7353
+      size: 106
