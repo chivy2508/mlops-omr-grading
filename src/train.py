@@ -8,13 +8,11 @@ from torch.utils.data import DataLoader
 import numpy as np
 import random
 from torchvision import datasets, transforms
-from dotenv import load_dotenv
 
 import yaml
 with open("config/config.yaml", "r") as f:
     config = yaml.safe_load(f)
 
-load_dotenv()
 
 batch_size = config['model']['batch_size']
 epochs = config['model']['epochs']
@@ -31,8 +29,11 @@ def seed_everything(seed=42):
 
 seed_everything(42)
 
-mlflow_tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
-mlflow.set_tracking_uri(mlflow_tracking_uri)
+os.environ["AWS_ACCESS_KEY_ID"] = "admin"
+os.environ["AWS_SECRET_ACCESS_KEY"] = "password123"
+os.environ["MLFLOW_S3_ENDPOINT_URL"] = "http://localhost:9000"
+mlflow.set_tracking_uri("http://localhost:5000")
+
 mlflow.set_experiment("OMR_Grading_System")
 
 
