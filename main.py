@@ -107,10 +107,11 @@ try:
     model = mlflow.pytorch.load_model(MODEL_URI)
     model.eval()
     client = mlflow.tracking.MlflowClient()
-    prod_versions = client.get_latest_versions("OMR_Grading_Engine", stages=["Production"])
-    if prod_versions:
-        current_model_version = prod_versions[0].version
-    print("✅ Nạp mô hình thành công!")
+    
+    prod_model = client.get_model_version_by_alias("OMR_Grading_Engine", "production")
+    current_model_version = prod_model.version
+    
+    print(f"✅ Nạp mô hình thành công! (Version: {current_model_version})")
 except Exception as e:
     print(f"🚨 Lỗi tải mô hình chí mạng: {e}")
     import sys
@@ -121,19 +122,19 @@ async def watch_mlflow_registry():
     client = mlflow.tracking.MlflowClient()
     while True:
         try:
-            prod_versions = await asyncio.to_thread(client.get_latest_versions, "OMR_Grading_Engine", stages=["Production"])
-            if prod_versions:
-                latest_prod_version = prod_versions[0].version
-                if latest_prod_version != current_model_version:
-                    print(f"🔄 Phát hiện phiên bản mới (v{latest_prod_version}), đang tải lại model...")
-                    new_model = await asyncio.to_thread(mlflow.pytorch.load_model, "models:/OMR_Grading_Engine@production")
-                    new_model.eval()
-                    model = new_model
-                    current_model_version = latest_prod_version
-                    print(f"✅ Đã cập nhật mô hình lên phiên bản v{latest_prod_version} thành công!")
+            prod_model = await asyncio.to_thread(client.get_model_version_by_alias, "OMR_Grading_Engine", "production")
+            latest_prod_version = prod_model.version
+            
+            if latest_prod_version != current_model_version:
+                print(f"🔄 Phát hiện phiên bản mới (v{latest_prod_version}), đang tải lại model...")
+                new_model = await asyncio.to_thread(mlflow.pytorch.load_model, "models:/OMR_Grading_Engine@production")
+                new_model.eval()
+                model = new_model
+                current_model_version = latest_prod_version
+                print(f"✅ Đã cập nhật mô hình lên phiên bản v{latest_prod_version} thành công!")
         except Exception:
-            pass
-        await asyncio.sleep(300) 
+            pass 
+        await asyncio.sleep(300)
 
 @app.on_event("startup")
 async def startup_event():
@@ -262,11 +263,11 @@ async def predict_omr(file: UploadFile = File(...)):
             })
 
         input_tensor = torch.tensor(np.array(patches)).unsqueeze(1) 
-        
-        with torch.no_grad(): 
-            outputs = model(input_tensor)
-            
-            probs = torch.softmax(outputs, dim=1)[:, 1]
+
+        with INFERENCE_TIME.time():
+            with torch.no_grad(): 
+                outputs = model(input_tensor)
+                probs = torch.softmax(outputs, dim=1)[:, 1]
 
         final_answers = []
         predictions_detail = []

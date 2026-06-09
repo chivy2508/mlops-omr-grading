@@ -1,5 +1,6 @@
 import mlflow
 from mlflow.tracking import MlflowClient
+import mlflow.exceptions 
 import torch
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
@@ -7,15 +8,14 @@ from sklearn.metrics import classification_report
 import json
 import os
 
-
 os.environ["AWS_ACCESS_KEY_ID"] = "admin"
 os.environ["AWS_SECRET_ACCESS_KEY"] = "password123"
 os.environ["MLFLOW_S3_ENDPOINT_URL"] = "http://localhost:9000"
 mlflow.set_tracking_uri("http://localhost:5000")
 
-
 client = MlflowClient()
 model_name = "OMR_Grading_Engine"
+alias_name = "production"
 
 # Lấy model version mới nhất trong registry
 latest_versions = client.search_model_versions(f"name='{model_name}'")
@@ -69,28 +69,34 @@ with open("metrics.json", "w") as f:
 
 new_accuracy = metrics["test_accuracy"]
 
+client.log_metric(latest_version_obj.run_id, "test_accuracy", new_accuracy)
 client.log_metric(latest_version_obj.run_id, "precision_filled", metrics["precision_filled"])
 client.log_metric(latest_version_obj.run_id, "recall_filled", metrics["recall_filled"])
 
 try:
-    prod_model = client.get_latest_versions(model_name, stages=["Production"])[0]
-    prod_accuracy = client.get_run(prod_model.run_id).data.metrics.get("final_test_accuracy", 0.0)
-except IndexError:
-    prod_accuracy = 0.0 
-
-if new_accuracy >= prod_accuracy * 0.98:
-    print(f"✅ Pass! Mô hình mới ({new_accuracy}) tốt hơn/ngang mô hình cũ ({prod_accuracy})")
+    prod_model = client.get_model_version_by_alias(name=model_name, alias=alias_name)
     
-    print(f"🚀 Đang đưa mô hình phiên bản {new_model_version} lên Production...")
-    client.transition_model_version_stage(
+    prod_accuracy = client.get_run(prod_model.run_id).data.metrics.get("test_accuracy", 0.0)
+except mlflow.exceptions.RestException:
+    
+    prod_accuracy = 0.0 
+    print("⚠️ Chưa có mô hình mang nhãn @production nào. Bỏ qua bước so sánh cũ.")
+
+threshold = prod_accuracy * 0.98
+
+if new_accuracy >= threshold:
+    print(f"✅ Pass! Mô hình mới ({new_accuracy:.4f}) đạt chuẩn so với mô hình cũ ({prod_accuracy:.4f})")
+    
+    print(f"🚀 Đang gắn nhãn @{alias_name} cho model version {new_model_version}...")
+    
+    client.set_registered_model_alias(
         name=model_name,
-        version=new_model_version,
-        stage="Production",
-        archive_existing_versions=True  
+        alias=alias_name,
+        version=new_model_version
     )
     print("🎉 Triển khai thành công!")
     
 else:
-    print(f"🚨 Failed! Mô hình mới quá tệ. Hủy deploy.")
+    print(f"🚨 Failed! Mô hình mới ({new_accuracy:.4f}) quá tệ so với ngưỡng chấp nhận ({threshold:.4f}). Hủy deploy.")
     import sys
     sys.exit(1)
