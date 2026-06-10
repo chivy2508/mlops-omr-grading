@@ -129,8 +129,8 @@ stages:
       nfiles: 80000
     - path: src/evaluate.py
       hash: md5
-      md5: 81f2a792d4730ea15ca9716d33fbb147
-      size: 3261
+      md5: 08289493cc0ed7844ec91b6f0e7c71f6
+      size: 3582
     outs:
     - path: metrics.json
       hash: md5
