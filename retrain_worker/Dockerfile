@@ -9,7 +9,7 @@ RUN pip install --no-cache-dir "dvc[s3]"
 
 RUN pip install --no-cache-dir mlflow
 
-RUN pip install --no-cache-dir prometheus_client requests numpy opencv-python-headless psycopg2-binary pandas filelock
+RUN pip install --no-cache-dir prometheus_client requests numpy opencv-python-headless psycopg2-binary pandas filelock schedule
 
 COPY worker.py .
 CMD ["python", "worker.py"]

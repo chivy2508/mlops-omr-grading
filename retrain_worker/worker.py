@@ -3,6 +3,9 @@ import time
 import os
 import glob
 import requests
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from src.integrate_feedback import process_and_trigger_pipeline
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")

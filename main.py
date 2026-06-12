@@ -25,11 +25,6 @@ if not MLFLOW_TRACKING_URI:
     raise ValueError("MLFLOW_TRACKING_URI must be set")
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
-TEMPLATE_CONFIG = None
-if os.path.exists("data/template_config.json"):
-    with open("data/template_config.json", "r") as f:
-        TEMPLATE_CONFIG = json.load(f)
-
 
 app = FastAPI(title="OMR Grading Engine API")
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
@@ -201,6 +196,14 @@ async def reload_model():
         return {"status": "thành công", "message": "Đã cập nhật model Production mới nhất lên RAM!"}
     except Exception as e:
         return {"status": "lỗi", "message": str(e)}
+
+def load_template_config():
+    config_path = "/app/data/template_config.json"
+    if os.path.exists(config_path):
+        with open(config_path, "r") as f:
+            return json.load(f)
+    return None
+
 @app.post("/predict")
 async def predict_omr(file: UploadFile = File(...)):
     TOTAL_REQUESTS.inc()
@@ -232,13 +235,15 @@ async def predict_omr(file: UploadFile = File(...)):
             
         final_processed_image = clean_and_binarize(aligned_img)
 
+        TEMPLATE_CONFIG = load_template_config()
+    
         if TEMPLATE_CONFIG is None:
-            return {"trang_thai": "lỗi", "chi_tiet": "Server thiếu file template_config.json"}
-            
+            return {"trang_thai": "lỗi", "chi_tiet": "Server chưa khởi tạo lưới tọa độ. Hệ thống đang chờ sinh file template_config.json"}
+
         patches = []
         coords_info = []
         
-        for bubble in TEMPLATE_CONFIG["bubbles"]:
+        for bubble in template_data["bubbles"]:
             center_x = bubble["x"]
             center_y = bubble["y"]
             half_w = bubble["w"] // 2
@@ -294,7 +299,6 @@ async def predict_omr(file: UploadFile = File(...)):
                 "confidence": float(best_prob)
             })
 
-        # --- Ghi nhận Metrics ---
         SUCCESS_REQUESTS.inc()
         
         # Chỉ đếm số liệu cho đáp án A, B, C, D hợp lệ (bỏ qua N)

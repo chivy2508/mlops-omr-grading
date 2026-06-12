@@ -46,18 +46,22 @@ services:
     container_name: omr_engine
     ports:
       - "8001:8000"
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     env_file:
       - .env
     depends_on:
       - minio
       - mlflow
     volumes:
+      - .:/app
       - ./data_retrain:/app/retrain_dataset
+      - ./data:/app/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/docs')\" || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 40s
     deploy:
       resources:
         limits:
@@ -141,6 +145,26 @@ services:
       - .env
     restart: unless-stopped
     command: python retrain_worker/worker.py
+
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: loki
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:2.9.0
+    container_name: promtail
+    volumes:
+      - /var/log:/var/log
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro 
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: -config.file=/etc/promtail/config.yml
+    restart: unless-stopped
+    depends_on:
+      - loki
 
 volumes:
   pg_data:

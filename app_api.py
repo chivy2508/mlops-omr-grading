@@ -119,8 +119,15 @@ with col2:
                 response = requests.post(FASTAPI_URL, files=files, timeout=15)
                 
                 if response.status_code == 200:
-                    st.session_state.api_data = response.json()
-                    st.success("🎉 API trả kết quả thành công!")
+                    result_data = response.json()
+                    
+                    if result_data.get("trang_thai") == "thành công":
+                        st.session_state.api_data = result_data
+                        st.success("🎉 API chấm điểm thành công!")
+                    else:
+                        error_msg = result_data.get("chi_tiet", "Lỗi không xác định từ Backend")
+                        st.error(f"❌ Backend từ chối xử lý: {error_msg}")
+                        st.session_state.api_data = None 
                 else:
                     st.error(f"API báo lỗi: Code {response.status_code}")
             except requests.Timeout:
