@@ -235,10 +235,10 @@ async def predict_omr(file: UploadFile = File(...)):
             
         final_processed_image = clean_and_binarize(aligned_img)
 
-        TEMPLATE_CONFIG = load_template_config()
+        template_data = load_template_config()
     
-        if TEMPLATE_CONFIG is None:
-            return {"trang_thai": "lỗi", "chi_tiet": "Server chưa khởi tạo lưới tọa độ. Hệ thống đang chờ sinh file template_config.json"}
+        if template_data is None:
+            return {"trang_thai": "lỗi", "chi_tiet": "Server thiếu file template_config.json"}  
 
         patches = []
         coords_info = []
