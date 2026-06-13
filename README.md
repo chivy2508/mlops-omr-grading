@@ -231,6 +231,34 @@ docker compose down
 pytest -q
 ```
 
+### One-Click demo (Quick start for instructors)
+
+Chuẩn bị một lần để giảng viên có trải nghiệm "1-Click":
+
+1. Đặt file mô hình `best_model.pth` vào thư mục `pretrained/` (repo đã chứa mẫu `pretrained/best_model.pth`).
+2. Tạo file `.env` theo `.env.example` hoặc theo hướng dẫn trong `CLOUD_DEPLOYMENT.md`.
+3. Khởi động toàn bộ dịch vụ:
+
+```bash
+docker compose up -d --build
+```
+
+4. Chạy script khởi tạo dữ liệu & mô hình (seed) để tạo bucket MinIO và đăng ký model vào MLflow:
+
+```bash
+python seed.py
+```
+
+5. Khởi động lại hoặc reload API để nạp model Production:
+
+```bash
+docker compose restart omr_api
+docker compose logs -f omr_api
+```
+
+Giảng viên chỉ cần tạo `.env`, chạy `docker compose up -d` và `python seed.py` — hệ thống sẽ có dữ liệu demo, model đăng ký và sẵn sàng để kiểm thử.
+
+
 
 ---
 
