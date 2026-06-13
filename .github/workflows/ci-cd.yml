@@ -60,9 +60,9 @@ jobs:
       - name: Rebuild & restart API + monitor
         run: |
           cd ~/mlops_project
-          docker-compose stop omr_api monitor || true
-          docker-compose rm -f omr_api monitor || true
-          docker-compose up -d --build omr_api monitor
+          docker compose stop omr_api monitor || true
+          docker compose rm -f omr_api monitor || true
+          docker compose up -d --build omr_api monitor
 
       - name: Health check
         run: |

@@ -1,0 +1,47 @@
+auth_enabled: false
+server:
+  http_listen_port: 3100
+  http_grpc_port: 9095
+
+distributor:
+  ring:
+    kvstore:
+      store: inmemory
+
+ingester:
+  wal:
+    enabled: false
+  chunk_idle_period: 1h
+  lifecycler:
+    ring:
+      kvstore:
+        store: inmemory
+      replication_factor: 1
+
+schema_config:
+  configs:
+    - from: 2020-10-24
+      store: boltdb-shipper
+      object_store: filesystem
+      schema: v11
+      index:
+        prefix: index_
+        period: 24h
+
+storage_config:
+  boltdb_shipper:
+    active_index_directory: /loki/index
+    cache_location: /loki/cache
+    shared_store: filesystem
+  filesystem:
+    directory: /loki/chunks
+
+chunk_store_config:
+  max_look_back_period: 0s
+
+table_manager:
+  retention_deletes_enabled: false
+  retention_period: 0s
+
+limits_config:
+  enforce_metric_name: false

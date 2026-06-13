@@ -13,3 +13,4 @@ python-dotenv
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch
 schedule
+pytest
