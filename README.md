@@ -49,7 +49,18 @@ Nhằm đáp ứng toàn diện vòng đời MLOps trên môi trường thực t
 ---
 
 ## IP server
-- Server thầy cấp: 192.xxx.xx.39
+
+Hệ thống hiện đang được triển khai trực tiếp trên máy chủ thực hành do Thầy cấp. Có sử dụng thêm một máy ảo khác Google Cloud.
+
+
+- **Server thầy cấp:** 192.168.28.39
+- **Hướng dẫn sử dụng:** Truy cập thông qua địa chỉ IP kết hợp với các Port tương ứng dưới đây để sử dụng các dịch vụ của hệ thống:
+
+  * 🌐 **Giao diện chấm thi (Streamlit):** [http://192.168.28.39:8888](http://192.168.28.39:8888)
+  * 📊 **Giám sát Hệ thống (Grafana):** [http://192.168.28.39:3000](http://192.168.28.39:3000) *(User: admin | Pass: admin123)*
+  * 📦 **Quản lý Mô hình (MLflow UI):** [http://192.168.28.39:5000](http://192.168.28.39:5000)
+  * 🗄️ **Quản lý Dữ liệu (MinIO Console):** [http://192.168.28.39:9001](http://192.168.28.39:9001) *(User: admin | Pass: password123)*
+  * ⚡ **Tài liệu API (FastAPI Docs):** [http://192.168.28.39:8001/docs](http://192.168.28.39:8001/docs)
 
 ## 🚀 Kiến trúc Hệ thống
 
@@ -243,13 +254,13 @@ GF_SECURITY_ADMIN_PASSWORD=admin123
 docker compose up -d --build
 ```
 
-4. Chạy script khởi tạo dữ liệu & mô hình (seed) để tạo bucket MinIO và đăng ký model vào MLflow:
+3. Chạy script khởi tạo dữ liệu & mô hình (seed) để tạo bucket MinIO và đăng ký model vào MLflow:
 
 ```bash
 python seed.py
 ```
 
-5. Khởi động lại hoặc reload API để nạp model Production:
+4. Khởi động lại hoặc reload API để nạp model Production:
 
 ```bash
 docker compose restart omr_api
