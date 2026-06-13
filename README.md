@@ -231,11 +231,10 @@ docker compose down
 pytest -q
 ```
 
-> Lưu ý: Nếu môi trường của bạn chưa cài docker compose v2, hãy cài plugin `docker-compose-v2` hoặc dùng `docker compose`.
 
 ---
 
-## 📌 Ghi chú nâng cao
+## 📌 Ghi chú
 
 - `config/config.yaml` chứa cấu hình model và tham số.
 - `dvc.yaml` là DAG pipeline, gồm các bước preprocess, train, val, eval.
@@ -248,7 +247,6 @@ pytest -q
 
 - Triển khai lên **Google Cloud VM** với cấu hình `e2-standard-2`.
 - Dùng GitHub Actions để pull code và chạy `docker compose` trên self-hosted runner.
-- Docker Compose V2 đảm bảo BuildKit và trải nghiệm triển khai thống nhất.
 
 ---
 
