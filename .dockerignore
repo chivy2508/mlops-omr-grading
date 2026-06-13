@@ -1,5 +1,6 @@
 # Bỏ qua dữ liệu thô và tập huấn luyện
-data/
+# Lưu ý: giữ lại data/template_config.json cho API
+!data/template_config.json
 
 # Bỏ qua các tệp theo dõi version
 .dvc/

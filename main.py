@@ -7,6 +7,7 @@ import torch
 import requests
 import json
 import uuid
+from pathlib import Path
 from prometheus_client import make_asgi_app, Counter, Gauge, Histogram
 import base64
 import asyncio
@@ -197,12 +198,41 @@ async def reload_model():
     except Exception as e:
         return {"status": "lỗi", "message": str(e)}
 
+def get_template_config_paths():
+    base_dir = Path(__file__).resolve().parent
+    return [
+        base_dir / "data" / "template_config.json",
+        Path.cwd() / "data" / "template_config.json",
+        Path("./data/template_config.json").resolve(),
+        Path("/app/data/template_config.json"),
+        Path(os.getenv("TEMPLATE_CONFIG_PATH", "")) if os.getenv("TEMPLATE_CONFIG_PATH") else None,
+    ]
+
+
 def load_template_config():
-    config_path = "/app/data/template_config.json"
-    if os.path.exists(config_path):
-        with open(config_path, "r") as f:
-            return json.load(f)
+    checked = []
+    for path in get_template_config_paths():
+        if path is None:
+            continue
+        checked.append(str(path))
+        if path.exists():
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            print(f"✅ Đã tải template_config.json từ: {path}")
+            return data
+
+    print("🚨 Không tìm thấy template_config.json. Đã kiểm tra các đường dẫn:")
+    for path in checked:
+        print(f" - {path}")
     return None
+
+
+TEMPLATE_DATA = load_template_config()
+if TEMPLATE_DATA is None:
+    raise FileNotFoundError(
+        "template_config.json không tìm thấy. Hãy kiểm tra xem file có tồn tại trong data/template_config.json "
+        "và container đã mount đúng volume ./data:/app/data chưa."
+    )
 
 @app.post("/predict")
 async def predict_omr(file: UploadFile = File(...)):
@@ -235,7 +265,7 @@ async def predict_omr(file: UploadFile = File(...)):
             
         final_processed_image = clean_and_binarize(aligned_img)
 
-        template_data = load_template_config()
+        template_data = TEMPLATE_DATA
     
         if template_data is None:
             return {"trang_thai": "lỗi", "chi_tiet": "Server thiếu file template_config.json"}  

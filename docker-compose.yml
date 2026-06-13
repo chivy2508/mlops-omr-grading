@@ -119,7 +119,6 @@ services:
     image: prom/node-exporter:latest
     container_name: node_exporter
     restart: unless-stopped
-    # Mount các thư mục gốc của server vào trong container (chỉ đọc) để nó quét được phần cứng
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
@@ -128,7 +127,7 @@ services:
       - '--path.procfs=/host/proc'
       - '--path.rootfs=/rootfs'
       - '--path.sysfs=/host/sys'
-      - '--collector.hwmon' # Bật bộ đếm này để lấy được thông số nhiệt độ
+      - '--collector.hwmon' 
     ports:
       - "9100:9100"
 
