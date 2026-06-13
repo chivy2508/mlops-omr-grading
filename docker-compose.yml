@@ -105,7 +105,7 @@ services:
     container_name: omr_api_demo
     ports:
       - "8888:8501"
-    command: streamlit run app_api.py --server.port 8501 --server.address 0.0.0.0
+    command: streamlit run app_api.py --server.port 8501 --server.address 0.0.0.0 --server.fileWatcherType none --browser.gatherUsageStats false
     volumes:
       - .:/app
     depends_on:
