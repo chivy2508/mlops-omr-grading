@@ -28,6 +28,7 @@ Dự án xây dựng một hệ thống chấm bài OMR MLOps đầy đủ bao g
 Nhằm đáp ứng toàn diện vòng đời MLOps trên môi trường thực tế, nhóm đã bổ sung và điều chỉnh các thành phần sau:
 
 1. **☁️ Cloud Deployment (CI/CD to Cloud):** Chuyển đổi hạ tầng từ Localhost sang máy chủ đám mây **Google Cloud VM**. Tích hợp GitHub Actions self-hosted runner để tự động deploy hệ thống không gián đoạn.
+![alt text](image-1.png)
 2. **📜 Centralized Logging:** Tích hợp thêm stack **Grafana Loki & Promtail** vào hệ sinh thái Docker Compose, giúp thu thập, truy vấn và quản lý toàn bộ logs của các container tại một giao diện duy nhất trên Grafana.
 3. **🧪 Automated Testing:** Xây dựng bộ Unit Test với `pytest` để kiểm thử độ ổn định của API (Data validation, Error handling, Timeout) trước khi deploy.
 
@@ -46,6 +47,9 @@ Nhằm đáp ứng toàn diện vòng đời MLOps trên môi trường thực t
 - **Hướng dẫn cài đặt & Kiểm thử (Testing):** Cung cấp đầy đủ hướng dẫn setup. Bổ sung bộ **Unit Test với Pytest** rà soát luồng API.
 
 ---
+
+## IP server
+- Server thầy cấp: 192.xxx.xx.39
 
 ## 🚀 Kiến trúc Hệ thống
 
@@ -212,31 +216,27 @@ mlops-omr-grading/
 git clone https://github.com/chivy2508/mlops-omr-grading.git
 cd mlops-omr-grading
 
-# Khởi động toàn bộ hệ thống
-docker compose up -d --build
+### 1. Triển khai hệ thống (Local & Cloud)
 
-# Kiểm tra
-docker compose ps
-```
+**One-Click demo:**
 
-### 2. Dừng hệ thống
-
-```bash
-docker compose down
-```
-
-### 3. Chạy unit test
-
-```bash
-pytest -q
-```
-
-### One-Click demo (Quick start for instructors)
-
-Chuẩn bị một lần để giảng viên có trải nghiệm "1-Click":
+Chuẩn bị một lần duy nhất để có trải nghiệm toàn bộ hệ thống:
 
 1. Đặt file mô hình `best_model.pth` vào thư mục `pretrained/` (repo đã chứa mẫu `pretrained/best_model.pth`).
-2. Tạo file `.env` theo `.env.example` hoặc theo hướng dẫn trong `CLOUD_DEPLOYMENT.md`.
+2. Tạo file `.env` tại thư mục gốc với nội dung sau:
+```env
+POSTGRES_USER=mlflow_user
+POSTGRES_PASSWORD=mlflow_pass
+POSTGRES_DB=mlflow_db
+
+MINIO_ROOT_USER=admin
+MINIO_ROOT_PASSWORD=password123
+AWS_ACCESS_KEY_ID=admin
+AWS_SECRET_ACCESS_KEY=password123
+MLFLOW_S3_ENDPOINT_URL=http://minio:9000
+MLFLOW_TRACKING_URI=http://mlflow:5000
+
+GF_SECURITY_ADMIN_PASSWORD=admin123
 3. Khởi động toàn bộ dịch vụ:
 
 ```bash
@@ -256,8 +256,21 @@ docker compose restart omr_api
 docker compose logs -f omr_api
 ```
 
-Giảng viên chỉ cần tạo `.env`, chạy `docker compose up -d` và `python seed.py` — hệ thống sẽ có dữ liệu demo, model đăng ký và sẵn sàng để kiểm thử.
+Chỉ cần tạo file .env, chạy lệnh khởi động và python seed.py — hệ thống sẽ tự động cấu hình dữ liệu, đăng ký mô hình và sẵn sàng để chấm thi tại http://localhost:8888.
 
+```
+
+### 2. Dừng hệ thống
+
+```bash
+docker compose down
+```
+
+### 3. Chạy unit test
+
+```bash
+pytest -q
+```
 
 
 ---
